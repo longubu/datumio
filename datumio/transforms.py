@@ -3,10 +3,7 @@
 Container of augmentation procedures. 
 
 TODO:
-    - Check out why build center_uncenter needs a swap of row/col
-    - See why we can't just use skimage affine, but need to do center/uncenter thing
     - Test numpy's random
-    - Test black and white implementation
     
 """
 import skimage.transform
@@ -140,7 +137,7 @@ def build_centering_transform(image_shape, output_shape):
     shift_x = (cols - tcols) / 2.0
     shift_y = (rows - trows) / 2.0
     return skimage.transform.SimilarityTransform(translation=(shift_x, shift_y))    
-
+    
 def build_center_uncenter_transforms(image_shape):
     """
     These are used to ensure that zooming and rotation happens around the center of the image.
@@ -185,7 +182,7 @@ def build_augmentation_transform(input_shape, output_shape = None, zoom=(1.0, 1.
         If None (default), output_shape = input_shape
 
     zoom: tuple or list of len(2) of floats
-        E.g: (zoom_row, zoom_col). Scale image rows by zoom_row and image cols 
+        E.g: (zoom_col, zoom_row). Scale image rows by zoom_row and image cols 
         by zoom_col. Float of < 1 indicate zoom out, >1 indicate zoom in.
     
     rotation: float, optional
@@ -197,7 +194,8 @@ def build_augmentation_transform(input_shape, output_shape = None, zoom=(1.0, 1.
         Note: Original skimage implementation requires rotation as radiances.
 
     translation: tuple or list of len(2) of ints
-        Translates image in (, ).
+        Translates image in (x,y). A negative x translates the image to the
+        left by x. A negative y translates the image down by y.
     
     flip_lr: bool, optional
         Flip image left/right
@@ -213,11 +211,15 @@ def build_augmentation_transform(input_shape, output_shape = None, zoom=(1.0, 1.
         rotation += 180
         # shear by 180 degrees is equivalent to rotation by 180 degrees + flip.
         # So after that we rotate it another 180 degrees to get just the flip.
-        
+    
+    # A negative x SHOULD move the image to the left by x. Skimage default does otherwise.
+    xt = -1*translation[0] 
+
     if output_shape is None: output_shape = input_shape
     tform_centering = build_centering_transform(input_shape, output_shape)
     tform_center, tform_uncenter = build_center_uncenter_transforms(input_shape)
-    tform_augment = skimage.transform.AffineTransform(scale=(1/zoom[0], 1/zoom[1]), rotation=np.deg2rad(rotation), shear=np.deg2rad(shear), translation=translation)
+    tform_augment = skimage.transform.AffineTransform(scale=(1/float(zoom[0]), 1/float(zoom[1])),
+                      rotation=np.deg2rad(rotation), shear=np.deg2rad(shear), translation=(xt, translation[1]))
     tf = tform_centering + tform_uncenter + tform_augment + tform_center # order of addition matters
     return tf
 

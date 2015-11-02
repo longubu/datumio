@@ -18,9 +18,9 @@ crop_percentage = 0.5
 crop_hw = (hw[0] - int(hw[0]*crop_percentage), hw[1] - int(hw[1]*crop_percentage))
 
 augmentation_params = dict( rotation = 45,
-                            zoom = (0.5, 2.),
-                            shear = 45,
-                            translation = (int(hw[0]*0.1), -int(hw[1]*0.1)),
+                            zoom = (0.5, 2.0), # zoom (x, y) = (col, row)
+                            shear = 15,
+                            translation = (int(hw[0]*0.1), -int(hw[1]*0.2)),
                             flip_lr = True,
                             )
 augmentation_keys = augmentation_params.keys()
@@ -31,6 +31,7 @@ nPlots = nAugmentations + 3
 nrows = int(np.ceil(np.sqrt(nPlots)))
 ncols = int(np.ceil(nPlots/float(nrows)))
 
+plt.figure(1); plt.clf()
 fig, axes = plt.subplots(nrows= nrows, ncols= ncols, num = 1)
 axes = axes.flatten()
 
@@ -53,7 +54,7 @@ for it, (key, param) in enumerate(augmentation_params.iteritems()):
     ax.set_yticks([])
 
 # plot image with all augmentations at once
-ax = axes[it + 1]
+ax = axes[it + 2]
 img_wf = dtf.transform_image(img, **augmentation_params)
 ax.imshow(img_wf.astype(np.uint8))
 ax.set_title("All Augmentations")
@@ -61,7 +62,7 @@ ax.set_xticks([])
 ax.set_yticks([])
 
 # plot image with all augmentations & center crop
-ax = axes[it + 2]
+ax = axes[it + 3]
 img_wf = dtf.transform_image(img, output_shape=crop_hw, **augmentation_params)
 ax.imshow(img_wf.astype(np.uint8))
 ax.set_title("All Augmentation + Crop")
