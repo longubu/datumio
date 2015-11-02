@@ -12,7 +12,7 @@ import numpy as np
 #==============================================================================
 # transform image
 #==============================================================================
-def transform_image(img, output_shape = None, zoom=(1.0, 1.0), rotation=0., shear=0., 
+def transform_image(img, output_shape=None, zoom=(1.0, 1.0), rotation=0., shear=0., 
                    translation=(0, 0), flip_lr=False, warp_kwargs= {}):
     """
     Transforms & crops image.
@@ -57,13 +57,12 @@ def transform_image(img, output_shape = None, zoom=(1.0, 1.0), rotation=0., shea
         
     """
     input_shape = img.shape[:2]
-    if output_shape is None: output_shape = input_shape
     tf = build_augmentation_transform(input_shape, output_shape=output_shape, 
                                       zoom=zoom, rotation=rotation, shear=shear,
                                       translation=translation, flip_lr=flip_lr)
     return fast_warp(img, tf, output_shape=output_shape, **warp_kwargs)
                        
-def fast_warp(img, tf, output_shape = None, mode='constant', order=1):
+def fast_warp(img, tf, output_shape=None, mode='constant', order=1):
     """
     This wrapper function is faster than skimage.transform.warp
     
@@ -158,7 +157,7 @@ def build_center_uncenter_transforms(image_shape):
     tform_center = skimage.transform.SimilarityTransform(translation=center_shift)
     return tform_center, tform_uncenter
     
-def build_augmentation_transform(input_shape, output_shape = None, zoom=(1.0, 1.0), rotation=0., shear=0., translation=(0, 0), flip_lr=False): 
+def build_augmentation_transform(input_shape, output_shape=None, zoom=(1.0, 1.0), rotation=0., shear=0., translation=(0, 0), flip_lr=False): 
     """
     Wrapper to build an affine transformation matrix applies:
     [zoom, rotate, shear, translate, and flip_lr, flip_ud]
@@ -172,16 +171,15 @@ def build_augmentation_transform(input_shape, output_shape = None, zoom=(1.0, 1.
     Parameters
     ---------
     input_shape: tuple or list of len(2) of ints
-        Input image shape of form (rows, cols)
+        Input image shape of form (rows, cols) to be transformed.
     
-    output_shape: tuple or list of len(2) of ints
+    output_shape: tuple or list of len(2) of ints, optional
         Center-crop shape of the resulting output transformed image. For 
         transformed images, rotations/zooms typically create regions of 
         unnecessary pixels, center cropping while doing this is a convenience with no
-        cost of speed.
-        If None (default), output_shape = input_shape
+        cost of speed. If None (default), output_shape = input_shape
 
-    zoom: tuple or list of len(2) of floats
+    zoom: tuple or list of len(2) of floats, optional
         E.g: (zoom_col, zoom_row). Scale image rows by zoom_row and image cols 
         by zoom_col. Float of < 1 indicate zoom out, >1 indicate zoom in.
     
@@ -213,7 +211,7 @@ def build_augmentation_transform(input_shape, output_shape = None, zoom=(1.0, 1.
         # So after that we rotate it another 180 degrees to get just the flip.
     
     # A negative x SHOULD move the image to the left by x. Skimage default does otherwise.
-    xt = -1*translation[0] 
+    xt = -1*translation[0]
 
     if output_shape is None: output_shape = input_shape
     tform_centering = build_centering_transform(input_shape, output_shape)
@@ -223,33 +221,69 @@ def build_augmentation_transform(input_shape, output_shape = None, zoom=(1.0, 1.
     tf = tform_centering + tform_uncenter + tform_augment + tform_center # order of addition matters
     return tf
 
-#TODO: EVERYTHING BELOW THIS.
-def random_perturbation_transform(zoom_range, rotation_range, shear_range,
-                                  translation_range_col, translation_range_row, 
-                                  do_flip_lr=True, allow_stretch=False, rng=np.random):
+def build_random_augmentation_transform(input_shape, output_shape=None, zoom_range=(1.0, 1.0), 
+                                        rotation_range=(0., 0.), shear_range=(0., 0.), 
+                                        translation_range=(0, 0), do_flip_lr=True, allow_stretch=False, 
+                                        rng=np.random):
     """
-    Randomly perturbs image using affine transformations: zoom, rotate, shear,
-        translate, flip_lr, and stretch.
+    Randomly perturbs image using affine transformations.
     
     Parameters
     ---------
-    zoom_range: 
+    input_shape: tuple or list of len(2) of ints
+        Input image shape of form (rows, cols) to be transformed.
     
+    output_shape: tuple or list of len(2) of ints, optional
+        Center-crop shape of the resulting output transformed image. For 
+        transformed images, rotations/zooms typically create regions of 
+        unnecessary pixels, center cropping while doing this is a convenience with no
+        cost of speed. If None (default), output_shape = input_shape
+        
+    zoom_range: list or tuple of ints, optional
+        E.g: (zoom_low, zoom_high). Will zoom randomly in x&y (at the same rate)
+        If allow_stretch = True, then x&y will be zoomed individually
+        
+    rotation_range: list of tuple of ints, optional
+        E.g: (low_deg, high_deg). Will rotate ccw by an angle chosen between 
+        randomly in the range supplied. Rotation angles are in deg between (-180, 180]
+        
+    shear_range: list of tuple of ints, optional
+        E.g: (low_shear_deg, high_shear_deg). Will randomly shear ccw by chosen angle.
+        Shear angles are in deg between (-180, 180]
+        
+    translation_range: list of tuple of ints, optional
+        E.g: (low_pixel, high_pixel). Randomly trasnslates x,y pixels (individually) 
+        between the range specified.
+    
+    do_flip_lr: bool, optional
+        Randomly flip the image symetrically left and right
+    
+    allow_stretch: bool, float, optional
+        Allows zoom x & y to be indepdently chosen.
+        If bool, will stretch x&y randomly between log_zoom_range
+        If float, will randomly choose zoom, then also choose a random stretch in
+        [-np.log(stretch), +np.log(stretch)]. Will then inversely stretch x&y by 
+        zoom*stretch and zoom/stretch respectively.
+    
+    rng: mtrand.RandomState
+        Random state given by np.random.Randomstate() for reproducibility.
+            
     Returns
     ---------
-    
+    tf: skimage.transform._geometric.SimilarityTransform
+        Built affine transformation.
     """            
-    shift_x = rng.uniform(*translation_range_col)
-    shift_y = rng.uniform(*translation_range_row)
+    shift_x = int(rng.uniform(*translation_range))
+    shift_y = int(rng.uniform(*translation_range))
     translation = (shift_x, shift_y)
 
     rotation = rng.uniform(*rotation_range)
     shear = rng.uniform(*shear_range)
 
     if do_flip_lr:
-        flip = (rng.randint(2) > 0) # flip half of the time
+        flip_lr = (rng.randint(2) > 0) # flip half of the time
     else:
-        flip = False
+        flip_lr = False
 
     # random zoom
     log_zoom_range = [np.log(z) for z in zoom_range]
@@ -266,4 +300,6 @@ def random_perturbation_transform(zoom_range, rotation_range, shear_range,
         zoom_x = zoom_y = np.exp(rng.uniform(*log_zoom_range))
     # the range should be multiplicatively symmetric, so [1/1.1, 1.1] instead of [0.9, 1.1] makes more sense.
         
-    return build_augmentation_transform((zoom_x, zoom_y), rotation, shear, translation, flip)
+    return build_augmentation_transform(input_shape=input_shape, output_shape=output_shape,
+                                        zoom=(zoom_x, zoom_y), rotation=rotation, shear=shear, 
+                                        translation=translation, flip_lr=flip_lr)

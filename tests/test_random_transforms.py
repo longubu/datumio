@@ -1,6 +1,5 @@
 """
-Test image transformations from transforms to see if they're doing exactly
-what we're want...
+Test random augmentation procedure in datumio.transforms
 """
 
 import datumio.transforms as dtf
@@ -17,13 +16,16 @@ hw = (img.shape[0], img.shape[1])
 crop_percentage = 0.5
 crop_hw = (hw[0] - int(hw[0]*crop_percentage), hw[1] - int(hw[1]*crop_percentage))
 
-augmentation_params = dict( rotation = 45,
-                            zoom = (0.5, 2.0), # zoom (x, y) = (col, row)
-                            shear = 15,
-                            translation = (int(hw[0]*0.1), -int(hw[1]*0.2)),
-                            flip_lr = True,
-                            )
-nAugmentations = len(augmentation_params)
+rng = np.random.RandomState(seed=97899)
+random_augmentation_parmas = [
+    {'zoom_range': (1/1.5, 1.5)},
+    {'rotation_range': (-30, 30)},
+    {'shear_range': (-15, 15)},
+    {'translation_range': (-200, 250)},
+    {'do_flip_lr': True},
+    {'allow_stretch': True, 'zoom_range': (1/1.5, 1.5)},
+]
+nAugmentations = len(random_augmentation_parmas)
 
 # set up plotting. nPlots = original image + len(augmentations) + all_augment + all_augment_crop
 nPlots = nAugmentations + 3
@@ -39,22 +41,24 @@ axes[0].imshow(img)
 axes[0].set_title("Original Image")
 
 # Plot each augmentation parameter, isolated
-for it, (key, param) in enumerate(augmentation_params.iteritems()):
+for it, rng_augmentation_param in enumerate(random_augmentation_parmas):
     ax = axes[it + 1]
-    augmentation_param = {key: param}
-    
-    # transform image
-    img_wf = dtf.transform_image(img, **augmentation_param)
+
+    # build transform, then apply fast_warp
+    tf = dtf.build_random_augmentation_transform(hw, rng = rng, **rng_augmentation_param)
+    img_wf = dtf.fast_warp(img, tf)
     
     # plot image
     ax.imshow(img_wf.astype(np.uint8))
-    ax.set_title("Augmentation Param: %s = %s"%(key, param))
+    ax.set_title("%s"%rng_augmentation_param)
     ax.set_xticks([])
     ax.set_yticks([])
 
 # plot image with all augmentations at once
 ax = axes[it + 2]
-img_wf = dtf.transform_image(img, **augmentation_params)
+rnd_params = {param.keys()[0]: param.values()[0] for param in random_augmentation_parmas}
+tf = dtf.build_random_augmentation_transform(hw, rng=rng, **rnd_params)
+img_wf = dtf.fast_warp(img, tf)
 ax.imshow(img_wf.astype(np.uint8))
 ax.set_title("All Augmentations")
 ax.set_xticks([])
@@ -62,6 +66,7 @@ ax.set_yticks([])
 
 # plot image with all augmentations & center crop
 ax = axes[it + 3]
-img_wf = dtf.transform_image(img, output_shape=crop_hw, **augmentation_params)
+tf = dtf.build_random_augmentation_transform(hw, output_shape=crop_hw, rng=rng, **rnd_params)
+img_wf = dtf.fast_warp(img, tf, output_shape=crop_hw)
 ax.imshow(img_wf.astype(np.uint8))
 ax.set_title("All Augmentation + Crop")
