@@ -1,9 +1,8 @@
-# -*- coding: utf-8 -*-
 """
 Container of augmentation procedures. 
 
 TODO:
-    - Test numpy's random
+    Include downsampling transform
     
 """
 import skimage.transform
@@ -12,15 +11,19 @@ import numpy as np
 #==============================================================================
 # transform image
 #==============================================================================
-def transform_image(img, output_shape=None, zoom=(1.0, 1.0), rotation=0., shear=0., 
+def transform_image(img, output_shape=None, tf=None, zoom=(1.0, 1.0), rotation=0., shear=0., 
                    translation=(0, 0), flip_lr=False, warp_kwargs= {}):
     """
-    Transforms & crops image.
+    Transforms image. Crops augmented image if output_shape is not None.
 
     Parameters
     ---------
     img: ndarray
         Input image to be transformed of shape (row, col, channels) or (row, col) if greyscale
+    
+    tf: skimage.transform._geometric.SimilarityTransform, optional
+        A built skimage.transform.SimilarityTransform, containing all the affine
+        transformations to be applied to `img`. If set, will override `all` other aug params.
         
     output_shape: tuple or list of len(2) of ints
         Center-crop shape of the resulting output transformed image. For 
@@ -53,15 +56,79 @@ def transform_image(img, output_shape=None, zoom=(1.0, 1.0), rotation=0., shear=
     Returns
     ---------
     img_wf: ndarray of dtype = np.float32
-        Transformed & cropped image of float32
+        Transformed image of output_shape. If output_shape is None,
+        will return transformed image of same dimension as input.  
         
     """
-    input_shape = img.shape[:2]
-    tf = build_augmentation_transform(input_shape, output_shape=output_shape, 
-                                      zoom=zoom, rotation=rotation, shear=shear,
-                                      translation=translation, flip_lr=flip_lr)
+    if tf is None:
+        input_shape = img.shape[:2]
+        tf = build_augmentation_transform(input_shape, output_shape=output_shape, 
+                                          zoom=zoom, rotation=rotation, shear=shear,
+                                          translation=translation, flip_lr=flip_lr)
     return fast_warp(img, tf, output_shape=output_shape, **warp_kwargs)
-                       
+
+def perturb_image(img, output_shape=None, zoom_range=(1.0, 1.0), rotation_range=(0., 0.), 
+                  shear_range=(0., 0.), translation_range=(0, 0), do_flip_lr=False, 
+                  allow_stretch=False, rng=np.random, warp_kwargs = {}):
+    """
+    Applies random augmentation of image. Crops augmented image if output_shape is not None.
+    
+    Parameters
+    ---------
+    img: ndarray
+        Input image to be transformed of shape (row, col, channels) or (row, col) if greyscale
+    
+    output_shape: tuple or list of len(2) of ints, optional
+        Center-crop shape of the resulting output transformed image. For 
+        transformed images, rotations/zooms typically create regions of 
+        unnecessary pixels, center cropping while doing this is a convenience with no
+        cost of speed. If None (default), output_shape = input_shape
+        
+    zoom_range: list or tuple of ints, optional
+        E.g: (zoom_low, zoom_high). Will zoom randomly in x&y (at the same rate)
+        If allow_stretch = True, then x&y will be zoomed individually
+        
+    rotation_range: list of tuple of ints, optional
+        E.g: (low_deg, high_deg). Will rotate ccw by an angle chosen between 
+        randomly in the range supplied. Rotation angles are in deg between (-180, 180]
+        
+    shear_range: list of tuple of ints, optional
+        E.g: (low_shear_deg, high_shear_deg). Will randomly shear ccw by chosen angle.
+        Shear angles are in deg between (-180, 180]
+        
+    translation_range: list of tuple of ints, optional
+        E.g: (low_pixel, high_pixel). Randomly trasnslates x,y pixels (individually) 
+        between the range specified.
+    
+    do_flip_lr: bool, optional
+        Randomly flip the image symetrically left and right
+    
+    allow_stretch: bool, float, optional
+        Allows zoom x & y to be indepdently chosen.
+        If bool, will stretch x&y randomly between log_zoom_range
+        If float, will randomly choose zoom, then also choose a random stretch in
+        [-np.log(stretch), +np.log(stretch)]. Will then inversely stretch x&y by 
+        zoom*stretch and zoom/stretch respectively.
+    
+    rng: mtrand.RandomState
+        Random state given by np.random.Randomstate() for reproducibility.
+        
+    warp_kwargs: dict, optional
+        Keyword arguments to be sent to fast_warp. See datumio.transforms.fast_warp
+        
+    Returns
+    ---------
+    img_wf: ndarray of dtype = np.float32
+        Randomly transformed image of output_shape. If output_shape is None,
+        will return transformed image of same dimension as input.
+    """
+    input_shape = img.shape[:2]
+    tf = build_random_augmentation_transform(input_shape, output_shape=output_shape,
+                                             zoom_range=zoom_range, rotation_range=rotation_range,
+                                             shear_range=shear_range, translation_range=translation_range)
+                    
+    return transform_image(img, tf=tf)
+    
 def fast_warp(img, tf, output_shape=None, mode='constant', order=1):
     """
     This wrapper function is faster than skimage.transform.warp
@@ -77,12 +144,12 @@ def fast_warp(img, tf, output_shape=None, mode='constant', order=1):
     
     output_shape: tuple or list of len(2) of ints, optional
         Center-crop :math:`tf(img)` to dimensions of `output_shape`.
-        If None (default), output_shape = (`img.shape[0]`, `img.shape[1]`)
+        If None (default), output_shape = (`img.shape[0]`, `img.shape[1]`).
     
     mode: str, optional
-        Points outside the boundaries of the input are filled according to the 
-        given mode (‘constant’, ‘nearest’, ‘reflect’ or ‘wrap’).
-    
+        Points outside the boundaries of the input are filled according to the
+        given mode('constant', 'nearest', 'reflect', 'wrap').
+        
     order: int, optional
         The order of interpolation. The order has to be in the range 0-5:
          - 0: Nearest-neighbor
@@ -223,7 +290,7 @@ def build_augmentation_transform(input_shape, output_shape=None, zoom=(1.0, 1.0)
 
 def build_random_augmentation_transform(input_shape, output_shape=None, zoom_range=(1.0, 1.0), 
                                         rotation_range=(0., 0.), shear_range=(0., 0.), 
-                                        translation_range=(0, 0), do_flip_lr=True, allow_stretch=False, 
+                                        translation_range=(0, 0), do_flip_lr=False, allow_stretch=False, 
                                         rng=np.random):
     """
     Randomly perturbs image using affine transformations.

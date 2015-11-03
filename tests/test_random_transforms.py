@@ -16,7 +16,7 @@ hw = (img.shape[0], img.shape[1])
 crop_percentage = 0.5
 crop_hw = (hw[0] - int(hw[0]*crop_percentage), hw[1] - int(hw[1]*crop_percentage))
 
-rng = np.random.RandomState(seed=97899)
+rng = np.random.RandomState(seed=435)
 random_augmentation_parmas = [
     {'zoom_range': (1/1.5, 1.5)},
     {'rotation_range': (-30, 30)},
@@ -45,8 +45,7 @@ for it, rng_augmentation_param in enumerate(random_augmentation_parmas):
     ax = axes[it + 1]
 
     # build transform, then apply fast_warp
-    tf = dtf.build_random_augmentation_transform(hw, rng = rng, **rng_augmentation_param)
-    img_wf = dtf.fast_warp(img, tf)
+    img_wf = dtf.perturb_image(img, rng = rng, **rng_augmentation_param)
     
     # plot image
     ax.imshow(img_wf.astype(np.uint8))
@@ -57,8 +56,7 @@ for it, rng_augmentation_param in enumerate(random_augmentation_parmas):
 # plot image with all augmentations at once
 ax = axes[it + 2]
 rnd_params = {param.keys()[0]: param.values()[0] for param in random_augmentation_parmas}
-tf = dtf.build_random_augmentation_transform(hw, rng=rng, **rnd_params)
-img_wf = dtf.fast_warp(img, tf)
+img_wf = dtf.perturb_image(img, rng=rng, **rnd_params)
 ax.imshow(img_wf.astype(np.uint8))
 ax.set_title("All Augmentations")
 ax.set_xticks([])
@@ -66,7 +64,6 @@ ax.set_yticks([])
 
 # plot image with all augmentations & center crop
 ax = axes[it + 3]
-tf = dtf.build_random_augmentation_transform(hw, output_shape=crop_hw, rng=rng, **rnd_params)
-img_wf = dtf.fast_warp(img, tf, output_shape=crop_hw)
+img_wf = dtf.perturb_image(img, output_shape=crop_hw, rng=rng, **rnd_params)
 ax.imshow(img_wf.astype(np.uint8))
 ax.set_title("All Augmentation + Crop")
