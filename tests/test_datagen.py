@@ -27,16 +27,16 @@ batch_size = 32
 batchgen = dtd.BatchGenerator()
 
 # iterate through entire dataset
-for mb_x, mb_y in batchgen.gen_batch(X, y, batch_size=batch_size): pass
+for mb_x, mb_y in batchgen.get_batch(X, y, batch_size=batch_size): pass
 
 # test batch shuffling
-batchIterator = batchgen.gen_batch(X, y, batch_size=batch_size, shuffle=True)
+batchIterator = batchgen.get_batch(X, y, batch_size=batch_size, shuffle=True)
 mb_x, mb_y = batchIterator.next()
 if np.all(mb_x == X[:batch_size]) and np.all(mb_y == y[:batch_size]): 
     raise Exception("Error correctly shuffling generation of batches")
 
 # get static non-shuffled batch as reference for augmentations
-batchIterator = batchgen.gen_batch(X, y, batch_size=batch_size, shuffle=False)
+batchIterator = batchgen.get_batch(X, y, batch_size=batch_size, shuffle=False)
 mb_x, mb_y = batchIterator.next()
 if not np.all(mb_x == X[:batch_size]) and not np.all(mb_y == y[:batch_size]): 
     raise Exception("Error correctly generating batch with no shuffle")
@@ -52,7 +52,7 @@ augmentation_params = dict(
 batchgen.set_aug_params(input_shape, aug_params=augmentation_params)
 
 # get augmented batch
-batchIterator = batchgen.gen_batch(X, y, batch_size=batch_size, shuffle=False)
+batchIterator = batchgen.get_batch(X, y, batch_size=batch_size, shuffle=False)
 mb_x_aug, mb_y_aug = batchIterator.next()
 if not np.all(mb_y == mb_y_aug): 
     raise Exception("Setting augmentations created error in generation of truth")
@@ -70,7 +70,7 @@ batchgen.aug_tf = None # unset static augmentation transforms so it doesnt do bo
 batchgen.set_rng_aug_params(input_shape, rng_aug_params=rng_augmentation_params)
 
 # get randomly augmented batch
-batchIterator = batchgen.gen_batch(X, y, batch_size=batch_size, shuffle=False)
+batchIterator = batchgen.get_batch(X, y, batch_size=batch_size, shuffle=False)
 mb_x_rng, mb_y_rng = batchIterator.next()
 if not np.all(mb_y == mb_y_rng): 
     raise Exception("Setting rng augmentations created error in generation of truth")
