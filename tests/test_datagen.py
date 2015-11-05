@@ -9,7 +9,9 @@ import matplotlib.pyplot as plt
 
 import datumio.datagen as dtd
 
+#==============================================================================
 # load data & labels
+#==============================================================================
 dataDir = 'test_data/cifar-10/'
 labelPath = 'test_data/cifar-10/labels.csv'
 labelDF = pd.read_csv(labelPath)
@@ -22,6 +24,9 @@ for uid, label in uid_labels:
 X = np.array(X, dtype = np.uint8)
 y = np.array(uid_labels[:, 1], dtype = int)
 
+#==============================================================================
+# test batch generator with umuv & shuffle
+#==============================================================================
 # set up batch generator
 batch_size = 32
 batchgen = dtd.BatchGenerator()
@@ -30,16 +35,34 @@ batchgen = dtd.BatchGenerator()
 for mb_x, mb_y in batchgen.get_batch(X, y, batch_size=batch_size): pass
 
 # test batch shuffling
-batchIterator = batchgen.get_batch(X, y, batch_size=batch_size, shuffle=True)
-mb_x, mb_y = batchIterator.next()
+mb_x, mb_y = batchgen.get_batch(X, y, batch_size=batch_size, shuffle=True).next()
 if np.all(mb_x == X[:batch_size]) and np.all(mb_y == y[:batch_size]): 
     raise Exception("Error correctly shuffling generation of batches")
 
 # get static non-shuffled batch as reference for augmentations
-batchIterator = batchgen.get_batch(X, y, batch_size=batch_size, shuffle=False)
-mb_x, mb_y = batchIterator.next()
+mb_x, mb_y = batchgen.get_batch(X, y, batch_size=batch_size, shuffle=False).next()
 if not np.all(mb_x == X[:batch_size]) and not np.all(mb_y == y[:batch_size]): 
     raise Exception("Error correctly generating batch with no shuffle")
+
+# test umuv
+mean = X.mean(axis=0)
+std = X.std(axis=0)
+umuv_mb_x = mb_x - mean
+umuv_mb_x = umuv_mb_x / std
+batchgen.set_umuv(X, axis=0)
+mb_x, mb_y = batchgen.get_batch(X, y, batch_size=batch_size, shuffle=False).next()
+# due to floating point precision, lets cehck only the first image w/ str 4pt precision
+umuv_mb_x_img0 = np.array(['%0.4f'%x for x in umuv_mb_x[0].flatten()])
+mb_x_img0 = np.array(['%0.4f'%x for x in mb_x[0].flatten()])
+if not np.all(mb_x_img0 == umuv_mb_x_img0):
+    raise Exception("Error correctly generating batch with umuv")
+
+#==============================================================================
+# test batch generator with augmentations & compare visually through figures
+#==============================================================================
+# reset batch generator and get a normal batch for comparison
+batchgen = dtd.BatchGenerator()
+mb_x, mb_y = batchgen.get_batch(X, y, batch_size=batch_size, shuffle=False).next()
 
 # set up batch generator with augmentation parameters
 augmentation_params = dict(
