@@ -128,6 +128,27 @@ def perturb_image(img, output_shape=None, zoom_range=(1.0, 1.0), rotation_range=
                                              shear_range=shear_range, translation_range=translation_range)
                     
     return transform_image(img, tf=tf)
+
+def transform_images(imgs, tf_image_kwargs={}):
+    """ Transforms a batch of images. imgs should be of shape (n_imgs, height, width, channels).
+    See `transform_image` for more information on tf_image_kwargs. Not using direct 
+    implementation of `transform_images` to optimize speed."""
+    bsize, height, width, chan = imgs.shape
+    
+    warp_kwargs = tf_image_kwargs.pop('warp_kwargs', {})
+    if tf_image_kwargs.pop('tf', None) is not None:
+        input_shape = (height, width)
+        tf = build_augmentation_transform(input_shape, **tf_image_kwargs)        
+    
+    output_shape = tf_image_kwargs.pop('output_shape', None)
+    if output_shape is None:
+        output_shape = input_shape
+    
+    t_imgs = np.zeros([bsize] + output_shape + [chan], dtype=np.float32)
+    for it, img in enumerate(imgs):
+        t_imgs[it] = fast_warp(img, tf, output_shape=output_shape, **warp_kwargs)
+        
+    return t_imgs
     
 def fast_warp(img, tf, output_shape=None, mode='constant', order=1):
     """

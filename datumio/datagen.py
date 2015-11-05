@@ -1,5 +1,10 @@
 """
 Collection of data generator classes.
+
+TODO: 
+    - on-the-fly DataLoader
+    - multiprocessing
+    
 """
 import numpy as np
 import transforms as dtf
@@ -133,4 +138,17 @@ class BatchGenerator(object):
     def set_uv(self, X, axis=0):
         """ Computes & set unit std. Batched with be uv-ed otf. See `set_umuv` """
         self.std = X.std(axis=axis)
+
+def DataGenerator(object, dataPaths, labels=None, chunk_size=3, batch_size=64):
+    """
+    ---
+    """
+    def __init__(self):
+        self.dataPaths = dataPaths
+        self.__dict__.update(locals())
+        
+    def get_batch(self):
+        
+        pass
+    
     
