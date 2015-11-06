@@ -4,9 +4,13 @@ Collection of data generator classes.
 TODO: 
     - on-the-fly DataLoader
     - multiprocessing
+    - convert batchGenerator to do vector-like applications
+    - Tests if faster to load batch then tf, or load images 1by1 tf
     
 """
 import numpy as np
+from PIL import Image
+
 import transforms as dtf
 
 class BatchGenerator(object):
@@ -19,21 +23,20 @@ class BatchGenerator(object):
         Batch generator. Computations & augmentations are done.
 
     set_umuv: 
-        Computes & set unit mean unit std. Batches will be umuv-ed.
+        Computes & set unit mean unit std on all of data & 
+        applies to each mini batch generation.
     
     set_aug_params: 
-        Sets static augmentation parameters. Batches will be 
-        augmented.
+        Sets static augmentation parameters
     
     set_rng_aug_params: 
-        Sets random augmentation parameter range. Batches will be
-        perturbed. 
+        Sets random augmentation parameter range.
 
     set_um: 
-        Computes & set unit mean of dataset. Batches will be um-ed.
-    
+        Computes & set unit mean of dataset. 
+        
     set_uv: 
-        Computes & set unit variance of dataset. Batches will be uv-ed.    
+        Computes & set unit variance of dataset. 
         
     """
     def __init__(self):
@@ -102,7 +105,8 @@ class BatchGenerator(object):
             
     def set_umuv(self, X, axis=0):
         """
-        Computes & set unit mean unit std. Batches will be umuv-ed otf.
+        Computes & set unit mean unit std on entire dataset and
+        applies to each minibatch generation.
         
         Parameters
         ---------
@@ -132,23 +136,123 @@ class BatchGenerator(object):
         self.rng_aug_params = rng_aug_params # only set parameters instead of build tf
         
     def set_um(self, X, axis=0):
-        """ Computes & set unit mean. Batches will be um-ed otf. See `set_umuv` """
+        """ Computes & set unit mean. See `set_umuv` """
         self.mean = X.mean(axis=axis)
         
     def set_uv(self, X, axis=0):
-        """ Computes & set unit std. Batched with be uv-ed otf. See `set_umuv` """
+        """ Computes & set unit std. See `set_umuv` """
         self.std = X.std(axis=axis)
 
-def DataGenerator(object, dataPaths, labels=None, chunk_size=3, batch_size=64):
+def default_batch_loader(dataPaths):
+    imgs = []
+    for dataPath in dataPaths:
+        imgs.append(np.array(Image.open(dataPath), dtype=np.float32))
+    return imgs
+    
+def DataGenerator(object):
     """
     ---
     """
-    def __init__(self):
-        self.dataPaths = dataPaths
+    def __init__(self, batch_loader=None):
         self.__dict__.update(locals())
+
+        self.aug_params = None
+        self.rng_aug_params = None
+        self.mean = None
+        self.std = None
         
-    def get_batch(self):
+        if batch_loader is None:
+            self.batch_loader = default_batch_loader
+        else:
+            self.batch_loader = batch_loader
+            
+    def set_aug_params(self, input_shape, aug_params):
+        """ input_shape is shape of an image. See datumio.transforms.transform_image."""
+        if self.rng_aug_params: 
+            raise Warning("Warning: Random augmentation is also set. Will do both!")
+            
+        self.aug_params = aug_params
         
-        pass
+    def set_rng_aug_params(self, input_shape, rng_aug_params):
+        """ input_shape is shape of an image. See datumio.transforms.perturb_image."""
+        if self.aug_tf:
+            raise Warning("Warning: Regular augmentation is also set. Will do both!")
+        
+        self.rng_aug_params = rng_aug_params
     
+    def set_umuv(self, mean=None, std=None, dataPaths=None, batch_size=32):
+        """ """
+        compute_mean = True
+        compute_std = True
+        
+        if mean is not None:
+            self.mean = float(mean)
+            compute_mean = False
+        
+        if std is not None:
+            self.std = float(std)
+            compute_std = False
+        
+        if (compute_mean or compute_std) and dataPaths is not None:
+           pass
+           #TODO: write umuv fnc
+        else:
+           raise Warning("Need to supply dataPaths or (std & mean) in order \
+                           to set the unit-mean unit-variance")
+                               
+    def set_um(self, mean=None, dataPaths=None, batch_size=32):
+        """ """
+        if mean is not None:
+            self.mean = float(mean)
+        elif dataPaths is not None:
+            pass
+            #TODO: write um fnc
+        else:
+            raise Warning("Need to supply one of two: mean or dataPaths in order \
+                            to set the unit-mean")
     
+    def set_uv(self, std=None, dataPaths=None, batch_size=32):
+        if std is not None:
+            self.std = float(std)
+        elif dataPaths is not None:
+            pass
+            #TODO: write uv fnc
+        else:
+            raise Warning("Need to supply one of two: mean or dataPaths in order \
+                            to set the unit-variance")
+                            
+    
+    def get_batch(self, dataPaths, labels=None, batch_size=32, shuffle=True, 
+                  rng=np.random, batch_loader_kwargs={}):
+        
+        if shuffle:
+            idxs = range(len(dataPaths))
+            rng.shuffle(idxs)
+            dataPaths = dataPaths[idxs]
+            if labels is not None: labels = labels[idxs]
+
+        ndata = len(dataPaths)        
+        nb_batch = int(np.ceil(float(len(ndata))/self.batch_size))
+        for b in range(nb_batch):
+            batch_end = (b+1)*batch_size
+            if batch_end > ndata:
+                nb_samples = ndata - b*batch_size
+            else:
+                nb_samples = batch_size
+            
+            bX = self.batch_loader(dataPaths[b*batch_size:b*batch_size+nb_samples], 
+                                           **batch_loader_kwargs)
+            if self.aug_params is not None:
+                bX = dtf.transform_images(bX, tf_image_kwargs=self.aug_params)
+                
+            if self.rng_aug_params is not None:
+                bX = dtf.perturb_images(bX, ptb_image_kwargs=self.rng_aug_params)
+            
+            if self.mean is not None:
+                bX -= self.mean
+            
+            if self.std is not None:
+                bX /= self.std
+                
+            yield bX, labels[b*batch_size:b*batch_size+nb_samples]
+            

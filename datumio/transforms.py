@@ -136,17 +136,30 @@ def transform_images(imgs, tf_image_kwargs={}):
     bsize, height, width, chan = imgs.shape
     
     warp_kwargs = tf_image_kwargs.pop('warp_kwargs', {})
-    if tf_image_kwargs.pop('tf', None) is not None:
+    tf = tf_image_kwargs.pop('tf', None) 
+    if tf is None:
         input_shape = (height, width)
         tf = build_augmentation_transform(input_shape, **tf_image_kwargs)        
     
     output_shape = tf_image_kwargs.pop('output_shape', None)
     if output_shape is None:
-        output_shape = input_shape
+        output_shape = (height, width)
     
-    t_imgs = np.zeros([bsize] + output_shape + [chan], dtype=np.float32)
+    t_imgs = np.zeros([bsize] + list(output_shape) + [chan], dtype=np.float32)
     for it, img in enumerate(imgs):
         t_imgs[it] = fast_warp(img, tf, output_shape=output_shape, **warp_kwargs)
+        
+    return t_imgs
+
+def perturb_images(imgs, ptb_image_kwargs={}):
+    """ DOCUMENT_HERE """
+    output_shape = ptb_image_kwargs.pop('output_shape', None)
+    if output_shape is None:
+        output_shape = imgs.shape[1:3]
+    
+    t_imgs = np.zeros([imgs.shape[0]] + list(output_shape) + [imgs.shape[3]], dtype=np.float32)
+    for it, img in enumerate(imgs):
+        t_imgs[it] = perturb_image(img, output_shape=output_shape, **ptb_image_kwargs)
         
     return t_imgs
     
