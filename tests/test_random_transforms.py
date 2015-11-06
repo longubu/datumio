@@ -56,8 +56,8 @@ for it, rng_augmentation_param in enumerate(random_augmentation_parmas):
 # plot image with all augmentations at once
 ax = axes[it + 2]
 rnd_params = {param.keys()[0]: param.values()[0] for param in random_augmentation_parmas}
-img_wf = dtf.perturb_image(img, rng=rng, **rnd_params)
-ax.imshow(img_wf.astype(np.uint8))
+img_wf_og = dtf.perturb_image(img, rng=rng, **rnd_params)
+ax.imshow(img_wf_og.astype(np.uint8))
 ax.set_title("All Augmentations")
 ax.set_xticks([])
 ax.set_yticks([])
@@ -67,3 +67,17 @@ ax = axes[it + 3]
 img_wf = dtf.perturb_image(img, output_shape=crop_hw, rng=rng, **rnd_params)
 ax.imshow(img_wf.astype(np.uint8))
 ax.set_title("All Augmentation + Crop")
+
+# test batch random augmentaitons
+imgs = np.array([img, img])
+t_imgs = dtf.perturb_images(imgs, ptb_image_kwargs=rnd_params)
+plt.figure(); plt.clf()
+plt.subplot(311)
+plt.title("Batch Rng  TF1")
+plt.imshow(t_imgs[0].astype(np.uint8))
+plt.subplot(312)
+plt.title("Batch Rng TF2")
+plt.imshow(t_imgs[1].astype(np.uint8))
+plt.subplot(313)
+plt.title("Correct All Augmentation")
+plt.imshow(img_wf_og.astype(np.uint8))

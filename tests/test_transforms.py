@@ -54,8 +54,8 @@ for it, (key, param) in enumerate(augmentation_params.iteritems()):
 
 # plot image with all augmentations at once
 ax = axes[it + 2]
-img_wf = dtf.transform_image(img, **augmentation_params)
-ax.imshow(img_wf.astype(np.uint8))
+img_wf_og = dtf.transform_image(img, **augmentation_params)
+ax.imshow(img_wf_og.astype(np.uint8))
 ax.set_title("All Augmentations")
 ax.set_xticks([])
 ax.set_yticks([])
@@ -65,3 +65,17 @@ ax = axes[it + 3]
 img_wf = dtf.transform_image(img, output_shape=crop_hw, **augmentation_params)
 ax.imshow(img_wf.astype(np.uint8))
 ax.set_title("All Augmentation + Crop")
+
+# test batch transformations vs regular transformation
+imgs = np.array([img, img])
+t_imgs = dtf.transform_images(imgs, tf_image_kwargs=augmentation_params)
+plt.figure(); plt.clf()
+plt.subplot(311)
+plt.title("Batch TF1")
+plt.imshow(t_imgs[0].astype(np.uint8))
+plt.subplot(312)
+plt.title("Batch TF2")
+plt.imshow(t_imgs[1].astype(np.uint8))
+plt.subplot(313)
+plt.title("Correct All Augmentation")
+plt.imshow(img_wf_og.astype(np.uint8))
