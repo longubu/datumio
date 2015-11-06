@@ -45,7 +45,7 @@ class BatchGenerator(object):
         self.mean           = None
         self.std            = None
 
-    def get_batch(self, X, y=None, batch_size=32, shuffle=True, rng=np.random):     
+    def get_batch(self, X, y=None, batch_size=32, shuffle=True, rng=np.random, return_chw_order=False):     
         """ 
         Iterable batch generator, given X data with y labels. Augmentations & umuv are 
         computed on the fly. Use get_batch.next() to fetch batches.
@@ -68,13 +68,15 @@ class BatchGenerator(object):
         
         rng: np.random.RandomState
             Randomstate to shuffle X (if true) for reproducibility.
-                
+        
+        return_chw_order: bool, optional
+            If True, returns minibatch in dimensions (channels, height, width).
         """
         if shuffle:
             idxs = range(len(X))
             rng.shuffle(idxs)
             X = X[idxs]
-            y = y[idxs]
+            if y is not None: y = y[idxs]
 
         nb_batch = int(np.ceil(float(X.shape[0])/batch_size))
         for b in range(nb_batch):
@@ -84,7 +86,7 @@ class BatchGenerator(object):
             else:
                 nb_samples = batch_size
             
-            bX = np.zeros( [nb_samples] + list(X.shape)[1:])
+            bX = []
             for i in xrange(nb_samples):
                 x = np.array(X[b*batch_size+i], dtype=np.float32)
                 if self.mean is not None:
@@ -99,9 +101,16 @@ class BatchGenerator(object):
                 if self.rng_aug_params is not None:
                     x = dtf.perturb_image(x, **self.rng_aug_params)
                 
-                bX[i] = x
-    
-            yield bX, y[b*batch_size:b*batch_size+nb_samples]
+                bX.append(x)
+            
+            bX = np.array(bX)
+            if return_chw_order:
+                bX = bX.transpose(0, 3, 1, 2)
+                
+            if y is not None:
+                yield bX, y[b*batch_size:b*batch_size+nb_samples]
+            else:
+                yield bX
             
     def set_umuv(self, X, axis=0):
         """
@@ -128,7 +137,7 @@ class BatchGenerator(object):
             
         self.aug_tf = dtf.build_augmentation_transform(input_shape, **aug_params)
     
-    def set_rng_aug_params(self, input_shape, rng_aug_params):
+    def set_rng_aug_params(self, rng_aug_params):
         """ input_shape is shape of an image. See datumio.transforms.perturb_image."""
         if self.aug_tf:
             raise Warning("Warning: Regular augmentation is also set. Will do both!")
@@ -143,17 +152,14 @@ class BatchGenerator(object):
         """ Computes & set unit std. See `set_umuv` """
         self.std = X.std(axis=axis)
 
-def default_batch_loader(dataPaths):
-    imgs = []
-    for dataPath in dataPaths:
-        imgs.append(np.array(Image.open(dataPath), dtype=np.float32))
-    return imgs
+def default_data_loader(dataPath):
+    return np.array(Image.open(dataPath), dtype=np.float32)
     
 def DataGenerator(object):
     """
     ---
     """
-    def __init__(self, batch_loader=None):
+    def __init__(self, data_loader=None, data_loader_kwargs={}):
         self.__dict__.update(locals())
 
         self.aug_params = None
@@ -161,26 +167,27 @@ def DataGenerator(object):
         self.mean = None
         self.std = None
         
-        if batch_loader is None:
-            self.batch_loader = default_batch_loader
+        if data_loader is None:
+            self.data_loader = default_data_loader
         else:
-            self.batch_loader = batch_loader
+            self.data_loader = data_loader
             
     def set_aug_params(self, input_shape, aug_params):
         """ input_shape is shape of an image. See datumio.transforms.transform_image."""
+        #TODO: FIX THIS AND RNG ONE
         if self.rng_aug_params: 
             raise Warning("Warning: Random augmentation is also set. Will do both!")
             
-        self.aug_params = aug_params
+        self.aug_tf = dtf.build_augmentation_transform(input_shape, **aug_params)
         
-    def set_rng_aug_params(self, input_shape, rng_aug_params):
+    def set_rng_aug_params(self, rng_aug_params):
         """ input_shape is shape of an image. See datumio.transforms.perturb_image."""
         if self.aug_tf:
             raise Warning("Warning: Regular augmentation is also set. Will do both!")
         
         self.rng_aug_params = rng_aug_params
     
-    def set_umuv(self, mean=None, std=None, dataPaths=None, batch_size=32):
+    def set_umuv(self, mean=None, std=None, dataPaths=None, axis=0, batch_size=32):
         """ """
         compute_mean = True
         compute_std = True
@@ -194,7 +201,16 @@ def DataGenerator(object):
             compute_std = False
         
         if (compute_mean or compute_std) and dataPaths is not None:
-           pass
+            if compute_mean: mean = []
+            if compute_std: std = []
+               
+            for X in get_batch(dataPaths, batch_size=batch_size, shuffle=False):
+                if compute_std:
+                    std.append(X.std(axis=axis))
+                if compute_mean:
+                    mean.append(X.mean(axis=axis))
+            if compute_std: self.std = np.mean(std)
+            if compute_mean: self.mean = np.mean(mean)
            #TODO: write umuv fnc
         else:
            raise Warning("Need to supply dataPaths or (std & mean) in order \
@@ -223,7 +239,7 @@ def DataGenerator(object):
                             
     
     def get_batch(self, dataPaths, labels=None, batch_size=32, shuffle=True, 
-                  rng=np.random, batch_loader_kwargs={}):
+                  rng=np.random, return_chw_order=False):
         
         if shuffle:
             idxs = range(len(dataPaths))
@@ -240,19 +256,29 @@ def DataGenerator(object):
             else:
                 nb_samples = batch_size
             
-            bX = self.batch_loader(dataPaths[b*batch_size:b*batch_size+nb_samples], 
-                                           **batch_loader_kwargs)
-            if self.aug_params is not None:
-                bX = dtf.transform_images(bX, tf_image_kwargs=self.aug_params)
+            bX = []
+            for i in xrange(nb_samples):
+                x = self.data_loader(dataPaths[b*batch_size+i], **self.data_loader_kwargs)
+                if self.mean is not None:
+                    x -= self.mean
                 
-            if self.rng_aug_params is not None:
-                bX = dtf.perturb_images(bX, ptb_image_kwargs=self.rng_aug_params)
-            
-            if self.mean is not None:
-                bX -= self.mean
-            
-            if self.std is not None:
-                bX /= self.std
+                if self.std is not None:
+                    x /= self.std
                 
-            yield bX, labels[b*batch_size:b*batch_size+nb_samples]
+                if self.aug_tf is not None:
+                    x = dtf.transform_image(x, tf=self.aug_tf)
+                    
+                if self.rng_aug_params is not None:
+                    x = dtf.perturb_image(x, **self.rng_aug_params)
+                
+                bX.append(x)
+            
+            bX = np.array(bX)
+            if return_chw_order:
+                bX = bX.transpose(0, 3, 1, 2)
+                
+            if labels is not None:
+                yield bX, labels[b*batch_size:b*batch_size+nb_samples]
+            else:
+                yield bX
             
