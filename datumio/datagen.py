@@ -2,14 +2,18 @@
 Collection of data generator classes.
 
 TODO: 
-    - on-the-fly DataLoader
     - multiprocessing
-    - convert batchGenerator to do vector-like applications
-    - Tests if faster to load batch then tf, or load images 1by1 tf
+    - is there a way to combine batch generator with datagen?
+        - maybe somehow define data_loader as a vector also???
+    - redocument
+    - sample wise zero mean , unir var
+    - rename zero mean 
+    
     
 """
 import numpy as np
 from PIL import Image
+import os
 
 import transforms as dtf
 
@@ -45,7 +49,8 @@ class BatchGenerator(object):
         self.mean           = None
         self.std            = None
 
-    def get_batch(self, X, y=None, batch_size=32, shuffle=True, rng=np.random, return_chw_order=False):     
+    def get_batch(self, X, y=None, batch_size=32, shuffle=True, 
+                  rng=np.random, ret_opts={'dtype': np.float32, 'chw_order': False}):     
         """ 
         Iterable batch generator, given X data with y labels. Augmentations & umuv are 
         computed on the fly. Use get_batch.next() to fetch batches.
@@ -72,6 +77,11 @@ class BatchGenerator(object):
         return_chw_order: bool, optional
             If True, returns minibatch in dimensions (channels, height, width).
         """
+
+        # parse ret_opts
+        ret_dtype = ret_opts.pop('dtype', np.float32)
+        ret_chw_order = ret_opts.pop('chw_order', False)
+        
         if shuffle:
             idxs = range(len(X))
             rng.shuffle(idxs)
@@ -103,8 +113,8 @@ class BatchGenerator(object):
                 
                 bX.append(x)
             
-            bX = np.array(bX)
-            if return_chw_order:
+            bX = np.array(bX, dtype=ret_dtype)
+            if ret_chw_order:
                 bX = bX.transpose(0, 3, 1, 2)
                 
             if y is not None:
@@ -153,7 +163,15 @@ class BatchGenerator(object):
         self.std = X.std(axis=axis)
 
 def default_data_loader(dataPath):
-    return np.array(Image.open(dataPath), dtype=np.float32)
+    ext = os.path.basename(dataPath).split(os.path.extsep)[1]
+    if ext == '.npy':
+        dat = np.load(dataPath)
+    else:
+        try:
+            dat = np.array(Image.open(dataPath))
+        except IOError:
+            raise IOError("default_data_loader does not recognize file type: %s"%ext)
+    return dat
     
 def DataGenerator(object):
     """
@@ -162,19 +180,22 @@ def DataGenerator(object):
     def __init__(self, data_loader=None, data_loader_kwargs={}):
         self.__dict__.update(locals())
 
-        self.aug_params = None
+        self.aug_tf         = None
         self.rng_aug_params = None
-        self.mean = None
-        self.std = None
+        self.mean           = None
+        self.std            = None
         
         if data_loader is None:
             self.data_loader = default_data_loader
         else:
-            self.data_loader = data_loader
+            set_data_loader(data_loader, data_loader_kwargs=data_loader_kwargs)
             
+    def set_data_loader(self, data_loader, data_loader_kwargs={}):
+        self.data_loader = data_loader
+        if data_loader_kwargs: self.data_loader_kwargs = data_loader_kwargs
+       
     def set_aug_params(self, input_shape, aug_params):
         """ input_shape is shape of an image. See datumio.transforms.transform_image."""
-        #TODO: FIX THIS AND RNG ONE
         if self.rng_aug_params: 
             raise Warning("Warning: Random augmentation is also set. Will do both!")
             
@@ -188,7 +209,9 @@ def DataGenerator(object):
         self.rng_aug_params = rng_aug_params
     
     def set_umuv(self, mean=None, std=None, dataPaths=None, axis=0, batch_size=32):
-        """ """
+        """ 
+        TODO: ask dinh how to do this part better        
+        """
         compute_mean = True
         compute_std = True
         
@@ -198,7 +221,6 @@ def DataGenerator(object):
         
         if std is not None:
             self.std = float(std)
-            compute_std = False
         
         if (compute_mean or compute_std) and dataPaths is not None:
             if compute_mean: mean = []
@@ -211,35 +233,15 @@ def DataGenerator(object):
                     mean.append(X.mean(axis=axis))
             if compute_std: self.std = np.mean(std)
             if compute_mean: self.mean = np.mean(mean)
-           #TODO: write umuv fnc
         else:
            raise Warning("Need to supply dataPaths or (std & mean) in order \
                            to set the unit-mean unit-variance")
                                
-    def set_um(self, mean=None, dataPaths=None, batch_size=32):
-        """ """
-        if mean is not None:
-            self.mean = float(mean)
-        elif dataPaths is not None:
-            pass
-            #TODO: write um fnc
-        else:
-            raise Warning("Need to supply one of two: mean or dataPaths in order \
-                            to set the unit-mean")
-    
-    def set_uv(self, std=None, dataPaths=None, batch_size=32):
-        if std is not None:
-            self.std = float(std)
-        elif dataPaths is not None:
-            pass
-            #TODO: write uv fnc
-        else:
-            raise Warning("Need to supply one of two: mean or dataPaths in order \
-                            to set the unit-variance")
-                            
-    
     def get_batch(self, dataPaths, labels=None, batch_size=32, shuffle=True, 
-                  rng=np.random, return_chw_order=False):
+                  rng=np.random, ret_opts={'dtype': np.float32, 'chw_order': False}):        
+        # parse ret_opts
+        ret_dtype = ret_opts.pop('dtype', np.float32)
+        ret_chw_order = ret_opts.pop('chw_order', False)
         
         if shuffle:
             idxs = range(len(dataPaths))
@@ -273,12 +275,11 @@ def DataGenerator(object):
                 
                 bX.append(x)
             
-            bX = np.array(bX)
-            if return_chw_order:
+            bX = np.array(bX, dtype=ret_dtype)
+            if ret_chw_order:
                 bX = bX.transpose(0, 3, 1, 2)
                 
             if labels is not None:
                 yield bX, labels[b*batch_size:b*batch_size+nb_samples]
             else:
                 yield bX
-            
