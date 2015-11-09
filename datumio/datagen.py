@@ -10,7 +10,9 @@ TODO:
     - make unit tests simpler
         - make unit tests apply imagenet data. larger and more realistic.
     - take into account greyscale images
-        
+    - do more checks to see if self.mean and self.std are both set
+    - do axis=None will
+            take operation over flattened array.
 """
 import numpy as np
 from PIL import Image
@@ -24,9 +26,6 @@ class BatchGenerator(object):
     
     Attributes: See documentation for each to see parameters & use.
     ---------
-    get_batch:
-        Batch generator. Fetches batches with realtime augmentation.
-
     set_zmuv: 
         Computes and sets input mean and std over the dataset (global zero-mean 
         unit-variance). Minibatches wil be substracted by this mean and divided 
@@ -39,7 +38,10 @@ class BatchGenerator(object):
     set_rng_aug_params: 
         Sets random augmentation parameter range. Random augmentations 
         include: [crop, zoom, rotation, shear, translation (x,y), flip_lr]
-        
+
+    get_batch:
+        Batch generator. Fetches batches with realtime augmentation.
+
     set_zm:
         Computes and set input mean over the dataset.
         
@@ -47,11 +49,60 @@ class BatchGenerator(object):
         Computes and set input variance over the dataset.
         
     """
-    def __init__(self):
+    def __init__(self,  # use DataGenerator.set_* to set these parameters
+                 mean=None,
+                 std=None,
+                 do_batchwise_mean=False,
+                 do_batchwise_std=False,
+                 aug_tf=None, 
+                 rng_aug_params=None,
+                 
+                       rng_aug_params=None,):
         self.aug_tf         = None
         self.rng_aug_params = None
         self.mean           = None
         self.std            = None
+
+    def set_zmuv(self, X, axis=0):
+        """
+        Computes mean and std of dataset. Subtracts minibatch by mean
+        and divides by std for global zero-mean unit-variance.
+        
+        Parameters
+        ---------
+        X: ndarray, shape = (data, height, width, channels)
+            Dataset to generate batch from.
+        
+        axis: tuple, int, 0 (default)
+            Axis to compute over. 0 will compute mean across batch with
+            output shape (height, width, channels). (0,1,2) will compute
+            mean across channels with output shape (3,). axis=None will
+            take operation over flattened array.
+            
+        """
+        self.set_zm(X, axis=axis)
+        self.set_uv(X, axis=axis)
+    
+    def set_batchwise_zmuv(self, do_batchwise_mean=True, do_batchwise_std=True, 
+                           axis=None):
+        self.set_batchwise_mean(do_batchwise_mean=do_batchwise_mean, axis=axis)
+        self.set_batchwise_std(do_batchwise_std=do_batchwise_std, axis=axis)
+    
+    def set_aug_params(self, input_shape, aug_params):
+        """ Sets static augmentation parameters to apply to each minibatch.
+        input_shape is shape of an image. See datumio.transforms.transform_image."""
+        if self.rng_aug_params: 
+            raise Warning("Warning: Random augmentation is also set. Will do both!")
+            
+        self.aug_tf = dtf.build_augmentation_transform(input_shape, **aug_params)
+    
+    def set_rng_aug_params(self, rng_aug_params):
+        """ Sets random augmentation parameters to apply to each minibatch.
+        input_shape is shape of an image. See datumio.transforms.perturb_image."""
+        if self.aug_tf:
+            raise Warning("Warning: Regular augmentation is also set. Will do both!")
+        
+        self.rng_aug_params = rng_aug_params # only set parameters instead of build tf
 
     def get_batch(self, X, labels=None, batch_size=32, shuffle=True, 
                   rng=np.random, ret_opts={'dtype': np.float32, 'chw_order': False}):     
@@ -114,12 +165,8 @@ class BatchGenerator(object):
             for i in xrange(nb_samples):
                 x = np.array(X[b*batch_size+i], dtype=np.float32)
                 
-                # apply zero-mean and unit-variance
-                if self.mean is not None:
-                    x -= self.mean
-                
-                if self.std is not None:
-                    x /= self.std
+                # apply zero-mean and unit-variance, if set
+                x = self._standardize(x)
 
                 # apply augmentations
                 if self.aug_tf is not None:
@@ -139,25 +186,7 @@ class BatchGenerator(object):
                 yield bX, labels[b*batch_size:b*batch_size+nb_samples]
             else:
                 yield bX
-            
-    def set_zmuv(self, X, axis=0):
-        """
-        Computes mean and std of dataset. Subtracts minibatch by mean
-        and divides by std for global zero-mean unit-variance.
         
-        Parameters
-        ---------
-        X: ndarray, shape = (data, height, width, channels)
-            Dataset to generate batch from.
-        
-        axis: tuple, int, 0 (default)
-            Axis to compute over. 0 will compute mean across batch with
-            output shape (height, width, channels). (0,1,2) will compute
-            mean across channels with output shape (3,). 
-        """
-        self.mean = self.set_zm(X, axis=axis)
-        self.std  = self.set_uv(X, axis=axis)
-
     def set_zm(self, X, axis=0):
         """ Sets zero-mean to apply to each minibatch. See `set_zmuv` """
         if self.mean is not None: 
@@ -169,22 +198,30 @@ class BatchGenerator(object):
         if self.std is not None:
             raise Warning("Std was previously set. Replacing values...")
         self.std = X.std(axis=axis)
-        
-    def set_aug_params(self, input_shape, aug_params):
-        """ Sets static augmentation parameters to apply to each minibatch.
-        input_shape is shape of an image. See datumio.transforms.transform_image."""
-        if self.rng_aug_params: 
-            raise Warning("Warning: Random augmentation is also set. Will do both!")
             
-        self.aug_tf = dtf.build_augmentation_transform(input_shape, **aug_params)
+    def set_batchwise_mean(self, do_batchwise_mean=True, axis=None):
+        """ """
+        self.do_batchwise_mean = do_batchwise_mean
+        self.batchwise_mean_axis = axis
     
-    def set_rng_aug_params(self, rng_aug_params):
-        """ Sets random augmentation parameters to apply to each minibatch.
-        input_shape is shape of an image. See datumio.transforms.perturb_image."""
-        if self.aug_tf:
-            raise Warning("Warning: Regular augmentation is also set. Will do both!")
+    def set_batchwise_std(self, do_batchwise_std=True, axis=None):
+        self.do_batchwise_std = do_batchwise_std
+        self.batchwise_std_axis = axis
+    
+    def _standardize(self, x):
+        if self.mean is not None:
+            x -= self.mean
         
-        self.rng_aug_params = rng_aug_params # only set parameters instead of build tf
+        if self.std is not None:
+            x /= self.std
+        
+        if self.batchwise_mean:
+            x -= np.mean(x, axis=self.batchwise_mean_axis)
+        
+        if self.batchwise_std:
+            x-= np.std(x, axis=self.batchwise_std_axis)
+        
+        return x     
         
 def default_data_loader(dataPath):
     """ Generic function for loading images. Supports .npy & basic PIL.Image
@@ -213,9 +250,6 @@ class DataGenerator(object):
     ---------
     set_data_loader:
         Sets the function used to load images.
-        
-    get_batch:
-        Batch generator. Fetches batches with realtime augmentation.
 
     set_zmuv: 
         Sets input global mean and std (zero-mean unit variance).
@@ -233,7 +267,10 @@ class DataGenerator(object):
     set_rng_aug_params: 
         Sets random augmentation parameter range. Random augmentations 
         include: [crop, zoom, rotation, shear, translation (x,y), flip_lr]
-    
+
+    get_batch:
+        Batch generator. Fetches batches with realtime augmentation.
+        
     set_zm:
         Sets input mean over the dataset.
     
@@ -258,22 +295,6 @@ class DataGenerator(object):
         self.data_loader = data_loader
         self.data_loader_kwargs = data_loader_kwargs
        
-    def set_aug_params(self, input_shape, aug_params):
-        """ Sets static augmentation parameters to apply to each minibatch.
-        input_shape is shape of an image. See datumio.transforms.transform_image."""
-        if self.rng_aug_params: 
-            raise Warning("Warning: Random augmentation is also set. Will do both!")
-            
-        self.aug_tf = dtf.build_augmentation_transform(input_shape, **aug_params)
-        
-    def set_rng_aug_params(self, rng_aug_params):
-        """ Sets random augmentation parameters to apply to each minibatch.
-        input_shape is shape of an image. See datumio.transforms.perturb_image."""
-        if self.aug_tf:
-            raise Warning("Warning: Regular augmentation is also set. Will do both!")
-        
-        self.rng_aug_params = rng_aug_params
-    
     def set_zmuv(self, mean, std):
         """ Sets global mean and std to apply to every minibatch generation. Use 
         compute_and_set_zmuv to compute and set the zero-mean and zero-std 
@@ -289,18 +310,6 @@ class DataGenerator(object):
         self.set_zm(mean)
         self.set_uv(std)
         
-    def set_zm(self, mean):
-        """ Sets zero-mean to apply to each minibatch. See `set_zmuv` """
-        if self.mean is not None: 
-            raise Warning("Mean was previosuly set. Replacing values...")
-        self.mean = mean
-        
-    def set_uv(self, std):
-        """ Sets unit-variance to apply to each minibatch. See `set_zmuv` """
-        if self.std is not None:
-            raise Warning("Std was previously set. Replacing values...")
-        self.std = std
-            
     def compute_and_set_zmuv(self, dataPaths, batch_size=32, axis=0,
                              without_augs=True, get_batch_kwargs={}):
         """
@@ -350,6 +359,22 @@ class DataGenerator(object):
         if without_augs:
             self.aug_tf = aug_tf
             self.rng_aug_params = rng_aug_params
+
+    def set_aug_params(self, input_shape, aug_params):
+        """ Sets static augmentation parameters to apply to each minibatch.
+        input_shape is shape of an image. See datumio.transforms.transform_image."""
+        if self.rng_aug_params: 
+            raise Warning("Warning: Random augmentation is also set. Will do both!")
+            
+        self.aug_tf = dtf.build_augmentation_transform(input_shape, **aug_params)
+        
+    def set_rng_aug_params(self, rng_aug_params):
+        """ Sets random augmentation parameters to apply to each minibatch.
+        input_shape is shape of an image. See datumio.transforms.perturb_image."""
+        if self.aug_tf:
+            raise Warning("Warning: Regular augmentation is also set. Will do both!")
+        
+        self.rng_aug_params = rng_aug_params
         
     def get_batch(self, dataPaths, labels=None, batch_size=32, shuffle=True, 
                   rng=np.random, ret_opts={'dtype': np.float32, 'chw_order': False}): 
@@ -422,6 +447,10 @@ class DataGenerator(object):
                 if self.std is not None:
                     x /= self.std
                 
+                if self.do_batchwise_zm:
+                    
+                if self.do_batchsise_uv:
+                    
                 # apply augmentations
                 if self.aug_tf is not None:
                     x = dtf.transform_image(x, tf=self.aug_tf)
@@ -440,3 +469,15 @@ class DataGenerator(object):
                 yield bX, labels[b*batch_size:b*batch_size+nb_samples]
             else:
                 yield bX
+                
+    def set_zm(self, mean):
+        """ Sets zero-mean to apply to each minibatch. See `set_zmuv` """
+        if self.mean is not None: 
+            raise Warning("Mean was previosuly set. Replacing values...")
+        self.mean = mean
+        
+    def set_uv(self, std):
+        """ Sets unit-variance to apply to each minibatch. See `set_zmuv` """
+        if self.std is not None:
+            raise Warning("Std was previously set. Replacing values...")
+        self.std = std
