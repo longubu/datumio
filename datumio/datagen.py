@@ -232,7 +232,7 @@ class BatchGenerator(object):
         
         return x 
     
-    def _check_do_params():
+    def _check_do_params(self):
         if self.do_global_zm:
             if self.mean is None:
                 raise Exception("do_global_zm is set but mean is None\n\
@@ -307,17 +307,24 @@ class DataGenerator(object):
     set_uv:
         Sets unit variance over the dataset.
     """
-    
-    def __init__(self):
+    def __init__(self,  # use DataGenerator.set_* to set these parameters
+                 do_global_zm=False,
+                 do_global_uv=False,
+                 do_batchwise_zm=False,
+                 do_batchwise_uv=False,
+                 do_static_aug=False,
+                 do_rng_aug=False,
+                 data_loader=default_data_loader,
+                 data_loader_kwargs={}
+                 ):
+                
         self.__dict__.update(locals())
-
-        self.aug_tf         = None
-        self.rng_aug_params = None
-        self.mean           = None
-        self.std            = None
-        
-        self.data_loader = default_data_loader
-        self.data_loader_kwargs = {}
+        self.mean              = None
+        self.std               = None
+        self.batchwise_zm_axis = None
+        self.batchwise_uv_axis = None
+        self.aug_tf            = None
+        self.rng_aug_params    = None
         
     def set_data_loader(self, data_loader, data_loader_kwargs={}):
         """ Sets the function used to load images within the minibatches. The 
@@ -325,7 +332,7 @@ class DataGenerator(object):
         self.data_loader = data_loader
         self.data_loader_kwargs = data_loader_kwargs
        
-    def set_zmuv(self, mean, std):
+    def set_global_zmuv(self, mean, std):
         """ Sets global mean and std to apply to every minibatch generation. Use 
         compute_and_set_zmuv to compute and set the zero-mean and zero-std 
         
@@ -337,11 +344,11 @@ class DataGenerator(object):
         std; float
             Std to divide on each minibatch iteration.
         """
-        self.set_zm(mean)
-        self.set_uv(std)
+        self._set_global_zm(mean)
+        self._set_global_uv(std)
         
-    def compute_and_set_zmuv(self, dataPaths, batch_size=32, axis=0,
-                             without_augs=True, get_batch_kwargs={}):
+    def compute_and_set_global_zmuv(self, dataPaths, batch_size=32, axis=None,
+                                    without_augs=True, get_batch_kwargs={}):
         """
         Computes global mean and variance of dataset provided in dataPaths.
         Use set_zmuv if mean and std values are already known.
@@ -370,10 +377,10 @@ class DataGenerator(object):
         """
         # compute mean and std without augmentation
         if without_augs:
-            aug_tf = self.aug_tf
-            rng_aug_params = self.rng_aug_params
-            self.aug_tf = None
-            self.rng_aug_params = None
+            do_static_aug = self.do_static_aug
+            do_rng_aug = self.do_rng_aug
+            self.do_static_aug = False
+            self.do_rng_aug = False
             
         # compute and set mean & std
         batches_mean = [] 
@@ -383,19 +390,24 @@ class DataGenerator(object):
             batches_mean.append(X.mean(axis=axis))
             batches_std.append(X.std(axis=axis))
             
-        self.set_zmuv(np.mean(batches_mean, axis=0), np.mean(batches_std, axis=0))
+        self.set_global_zmuv(np.mean(batches_mean, axis=0), np.mean(batches_std, axis=0))
         
         # reset augmentation parameters
         if without_augs:
-            self.aug_tf = aug_tf
-            self.rng_aug_params = rng_aug_params
-
-    def set_aug_params(self, input_shape, aug_params):
+            self.do_static_aug = do_static_aug
+            self.do_rng_aug = do_rng_aug
+    
+    def set_batchwise_zmuv(self, axis=None):
+        self._set_batchwise_zm(axis=axis)
+        self._set_batchwise_uv(axis=axis)
+        
+    def set_static_aug_params(self, input_shape, aug_params):
         """ Sets static augmentation parameters to apply to each minibatch.
         input_shape is shape of an image. See datumio.transforms.transform_image."""
         if self.rng_aug_params: 
             raise Warning("Warning: Random augmentation is also set. Will do both!")
-            
+        
+        self.do_static_aug = True
         self.aug_tf = dtf.build_augmentation_transform(input_shape, **aug_params)
         
     def set_rng_aug_params(self, rng_aug_params):
@@ -404,6 +416,7 @@ class DataGenerator(object):
         if self.aug_tf:
             raise Warning("Warning: Regular augmentation is also set. Will do both!")
         
+        self.do_rng_aug = True
         self.rng_aug_params = rng_aug_params
         
     def get_batch(self, dataPaths, labels=None, batch_size=32, shuffle=True, 
@@ -445,6 +458,9 @@ class DataGenerator(object):
         ret_dtype = ret_opts.pop('dtype', np.float32)
         ret_chw_order = ret_opts.pop('chw_order', False)
         
+        # check if do_ procedures and params are correct
+        self._check_do_params()
+        
         # shuffle data & labels
         if shuffle:
             idxs = range(len(dataPaths))
@@ -469,17 +485,9 @@ class DataGenerator(object):
             for i in xrange(nb_samples):
                 # load data
                 x = self.data_loader(dataPaths[b*batch_size+i], **self.data_loader_kwargs)
-                
-                # apply zero-mean and unit-variance
-                if self.mean is not None:
-                    x -= self.mean
-                
-                if self.std is not None:
-                    x /= self.std
-                
-                if self.do_batchwise_zm:
-                    
-                if self.do_batchsise_uv:
+
+                # apply zero-mean and unit-variance, if set
+                x = self._standardize(x)
                     
                 # apply augmentations
                 if self.aug_tf is not None:
@@ -500,14 +508,47 @@ class DataGenerator(object):
             else:
                 yield bX
                 
-    def set_zm(self, mean):
+    def _set_global_zm(self, mean):
         """ Sets zero-mean to apply to each minibatch. See `set_zmuv` """
         if self.mean is not None: 
             raise Warning("Mean was previosuly set. Replacing values...")
+        self.do_global_zm = True
         self.mean = mean
         
-    def set_uv(self, std):
+    def _set_global_uv(self, std):
         """ Sets unit-variance to apply to each minibatch. See `set_zmuv` """
         if self.std is not None:
             raise Warning("Std was previously set. Replacing values...")
+        self.do_global_uv = True
         self.std = std
+
+    def _set_batchwise_zm(self, axis=None):
+        """ """
+        self.do_batchwise_zm = True
+        self.batchwise_mean_axis = axis
+    
+    def _set_batchwise_uv(self, axis=None):
+        self.do_batchwise_uv = True
+        self.batchwise_std_axis = axis
+
+    def _check_do_params(self):
+        if self.do_global_zm:
+            if self.mean is None:
+                raise Exception("do_global_zm is set but mean is None\n\
+                                ... Use `set_global_zmuv` to set mean")
+        
+        if self.do_global_uv:
+            if self.std is None:
+                raise Exception("do_global_uv is set but std is None\n\
+                                ... Use `set_global_zmuv` to set std")
+        
+        if self.do_static_aug:
+            if self.aug_tf is None:
+                raise Exception("do_static_aug is set but aug_tf is None\n\
+                                ... use `set_static_aug_params` to set aug params")
+            
+        if self.do_rng_aug:
+            if self.rng_aug_parmas is None:
+                raise Exception("do_rng_aug is set but rng_aug_params is None\n\
+                                ... use `set_rng_aug_params` to set rng params")
+                                
