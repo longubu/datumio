@@ -9,6 +9,7 @@ TODO:
     - update unit tests
     - make unit tests simpler
         - make unit tests apply imagenet data. larger and more realistic.
+    - take into account greyscale images
         
 """
 import numpy as np
@@ -18,23 +19,33 @@ import transforms as dtf
 
 class BatchGenerator(object):
     """
-    Iterable batch fetcher with zmuv & augmentations computed on-the-fly (otf).
+    Iterable batch fetcher with realtime data augmentation.
     Requires loading the dataset onto memory beforehand.
     
     Attributes: See documentation for each to see parameters & use.
     ---------
     get_batch:
-        Batch generator. Computations & augmentations are done.
+        Batch generator. Fetches batches with realtime augmentation.
 
     set_zmuv: 
-        Computes mean and std on all of data. Will apply zmuv
-        to each mini batch generation.
+        Computes and sets input mean and std over the dataset (global zero-mean 
+        unit-variance). Minibatches wil be substracted by this mean and divided 
+        by the std.
     
     set_aug_params: 
-        Sets static augmentation parameters
+        Sets static augmentation parameters. Augmentations include: [crop, zoom,
+        rotation, shear, translation (x,y), flip_lr]
     
     set_rng_aug_params: 
-        Sets random augmentation parameter range.
+        Sets random augmentation parameter range. Random augmentations 
+        include: [crop, zoom, rotation, shear, translation (x,y), flip_lr]
+        
+    set_zm:
+        Computes and set input mean over the dataset.
+        
+    set_uv: 
+        Computes and set input variance over the dataset.
+        
     """
     def __init__(self):
         self.aug_tf         = None
@@ -45,8 +56,11 @@ class BatchGenerator(object):
     def get_batch(self, X, labels=None, batch_size=32, shuffle=True, 
                   rng=np.random, ret_opts={'dtype': np.float32, 'chw_order': False}):     
         """ 
-        Iterable batch generator, given X data with labels (optional). Augmentations 
-        & zmuv are computed on-the-fly. Use get_batch.next() to fetch batches.
+        Iterable batch generator. Returns minibatches of the dataset (X, labels) with 
+        realtime augmentaitons. Use get_batch.next() to fetch batches.
+        
+        Augmentation parameters and zmuv need to be set prior to running
+        get_batch.
         
         Parameters
         ---------
@@ -101,8 +115,10 @@ class BatchGenerator(object):
                 x = np.array(X[b*batch_size+i], dtype=np.float32)
                 
                 # apply zero-mean and unit-variance
-                if (self.mean is not None) and (self.std is not None):
+                if self.mean is not None:
                     x -= self.mean
+                
+                if self.std is not None:
                     x /= self.std
 
                 # apply augmentations
@@ -126,8 +142,8 @@ class BatchGenerator(object):
             
     def set_zmuv(self, X, axis=0):
         """
-        Computes mean unit std on entire dataset and
-        applies to each minibatch generation.
+        Computes mean and std of dataset. Subtracts minibatch by mean
+        and divides by std for global zero-mean unit-variance.
         
         Parameters
         ---------
@@ -139,8 +155,20 @@ class BatchGenerator(object):
             output shape (height, width, channels). (0,1,2) will compute
             mean across channels with output shape (3,). 
         """
+        self.mean = self.set_zm(X, axis=axis)
+        self.std  = self.set_uv(X, axis=axis)
+
+    def set_zm(self, X, axis=0):
+        """ Sets zero-mean to apply to each minibatch. See `set_zmuv` """
+        if self.mean is not None: 
+            raise Warning("Mean was previosuly set. Replacing values...")
         self.mean = X.mean(axis=axis)
-        self.std  = X.std(axis=axis)
+        
+    def set_uv(self, X, axis=0):
+        """ Sets unit-variance to apply to each minibatch. See `set_zmuv` """
+        if self.std is not None:
+            raise Warning("Std was previously set. Replacing values...")
+        self.std = X.std(axis=axis)
         
     def set_aug_params(self, input_shape, aug_params):
         """ Sets static augmentation parameters to apply to each minibatch.
@@ -178,26 +206,39 @@ def default_data_loader(dataPath):
     
 class DataGenerator(object):
     """
-    Iterable batch fetcher for datasets of large units with zmuv & augmentations 
-    computed on-the-fly (otf). Does not require loading the dataset beforehand.
+    Iterable batch fetcher with realtime data augmentation. Loads the data, sets
+    zero-mean unit variance and augmentations on-the-fly.
     
     Attributes: See documentation for each to see parameters & use.
     ---------
     set_data_loader:
-        Sets the function used to load images within the minibatch.
+        Sets the function used to load images.
         
     get_batch:
-        Batch generator. Computations & augmentations are done.
+        Batch generator. Fetches batches with realtime augmentation.
 
     set_zmuv: 
-        Computes mean and std on all of data. Will apply zmuv
-        to each mini batch generation.
+        Sets input global mean and std (zero-mean unit variance).
+        Minibatches wil be substracted by this mean and divided 
+        by the std.
     
+    compute_and_set_zmuv:
+        Computes and sets input mean and std over the dataset (global zero-mean 
+        unit-variance). 
+        
     set_aug_params: 
-        Sets static augmentation parameters
+        Sets static augmentation parameters. Augmentations include: [crop, zoom,
+        rotation, shear, translation (x,y), flip_lr]
     
     set_rng_aug_params: 
-        Sets random augmentation parameter range.
+        Sets random augmentation parameter range. Random augmentations 
+        include: [crop, zoom, rotation, shear, translation (x,y), flip_lr]
+    
+    set_zm:
+        Sets input mean over the dataset.
+    
+    set_uv:
+        Sets unit variance over the dataset.
     """
     
     def __init__(self):
@@ -234,7 +275,7 @@ class DataGenerator(object):
         self.rng_aug_params = rng_aug_params
     
     def set_zmuv(self, mean, std):
-        """ Sets zero-mean and zero-std to apply to every minibatch. Use 
+        """ Sets global mean and std to apply to every minibatch generation. Use 
         compute_and_set_zmuv to compute and set the zero-mean and zero-std 
         
         Parameters
@@ -263,7 +304,7 @@ class DataGenerator(object):
     def compute_and_set_zmuv(self, dataPaths, batch_size=32, axis=0,
                              without_augs=True, get_batch_kwargs={}):
         """
-        Computes zero-mean and unit variance of dataset provided in dataPaths.
+        Computes global mean and variance of dataset provided in dataPaths.
         Use set_zmuv if mean and std values are already known.
         
         Parameters
@@ -313,9 +354,12 @@ class DataGenerator(object):
     def get_batch(self, dataPaths, labels=None, batch_size=32, shuffle=True, 
                   rng=np.random, ret_opts={'dtype': np.float32, 'chw_order': False}): 
         """ 
-        Iterable batch generator, given list of paths to the data and
-        associated labels. Loading, Augmentations & zmuv are computed on-the-fly. 
-        Use get_batch.next() to fetch batches.
+        Iterable batch generator. Returns minibatches of the dataset (X, labels) 
+        with realtime augmentations, where X is loaded from dataPaths and 
+        DataGenerator.data_loader. Use get_batch.next() to fetch batches.
+
+        Augmentation parameters and zmuv need to be set prior to running
+        get_batch.        
         
         Parameters
         ---------
@@ -372,8 +416,10 @@ class DataGenerator(object):
                 x = self.data_loader(dataPaths[b*batch_size+i], **self.data_loader_kwargs)
                 
                 # apply zero-mean and unit-variance
-                if (self.mean is not None) and (self.std is not None):
+                if self.mean is not None:
                     x -= self.mean
+                
+                if self.std is not None:
                     x /= self.std
                 
                 # apply augmentations
