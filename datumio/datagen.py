@@ -5,14 +5,10 @@ TODO:
     - multiprocessing
     - is there a way to combine batch generator with dataloader?
         - create a base class 
-    - update unit tests
-    - make unit tests simpler
-        - make unit tests apply imagenet data. larger and more realistic.
     - take into account greyscale images
 """
 import numpy as np
 from PIL import Image
-import warnings
 
 import transforms as dtf
 
@@ -100,7 +96,7 @@ class BatchGenerator(object):
         """ Sets static augmentation parameters to apply to each minibatch.
         input_shape is shape of an image. See datumio.transforms.transform_image."""
         if self.rng_aug_params is not None and self.do_rng_aug: 
-            print("[datagen] Warning: Static and Random augmentations are both set.")
+            print("[datagen:BatchGenerator] Warning: Static and Random augmentations are both set.")
          
         self.do_static_aug = True
         self.aug_tf = dtf.build_augmentation_transform(input_shape, **aug_params)
@@ -109,7 +105,7 @@ class BatchGenerator(object):
         """ Sets random augmentation parameters to apply to each minibatch.
         See datumio.transforms.perturb_image."""
         if self.aug_tf is not None and self.do_static_aug:
-            print("[datagen] Warning: Static and Random augmentations are both set.")
+            print("[datagen:BatchGenerator] Warning: Static and Random augmentations are both set.")
         
         self.do_rng_aug = True
         self.rng_aug_params = rng_aug_params # only set parameters instead of build tf
@@ -204,7 +200,7 @@ class BatchGenerator(object):
     def _set_global_zm(self, X, axis=None):
         """ Sets zero-mean to apply to each minibatch. See `set_zmuv` """
         if self.mean is not None: 
-            print("[datagen] Warning Mean was previosuly set. Replacing values...")
+            print("[datagen:BatchGenerator] Warning: Mean was previosuly set. Replacing values...")
         self.do_global_zm = True
         self.mean = X.mean(axis=axis)
         return X - self.mean
@@ -212,7 +208,7 @@ class BatchGenerator(object):
     def _set_global_uv(self, X, axis=None):
         """ Sets unit-variance to apply to each minibatch. See `set_zmuv` """
         if self.std is not None:
-            print("[datagen] Warning Std was previously set. Replacing values...")
+            print("[datagen:BatchGenerator] Warning: Std was previously set. Replacing values...")
         self.do_global_uv = True
         self.std = X.std(axis=axis)
         return X / self.std
@@ -390,7 +386,8 @@ class DataGenerator(object):
             or without. Without_augs=True will load batches without augmentations.
             
         get_batch_kwargs: dict, optional
-            Additional keywords to pass to get_batch when laoding the minibatches.
+            Additional keywords to pass to get_batch when loading the minibatches.
+            See `DataGenerator.get_batch` for kwargs.
         """
         # compute mean and std without augmentation
         if without_augs:
@@ -402,13 +399,14 @@ class DataGenerator(object):
         # compute and set mean & std
         batches_mean = [] 
         batches_std = []
+        
+        # set do global zmuv to false so we can iterate thru batches
+        self.do_global_uv = False
+        self.do_global_zm = False
         for X in self.get_batch(dataPaths, batch_size=batch_size, 
                                 shuffle=False, **get_batch_kwargs):
-            print X.mean()
             mean = X.mean(axis=axis)
             X = X - mean
-            print X.mean()
-            
             std = X.std(axis=axis)
             
             batches_mean.append(mean)
@@ -434,7 +432,7 @@ class DataGenerator(object):
         """ Sets static augmentation parameters to apply to each minibatch.
         input_shape is shape of an image. See datumio.transforms.transform_image."""
         if self.rng_aug_params is not None and self.do_rng_aug: 
-            print("[datagen] Warning: Static and Random augmentations are both set.")
+            print("[datagen:DataGenerator] Warning: Static and Random augmentations are both set.")
         
         self.do_static_aug = True
         self.aug_tf = dtf.build_augmentation_transform(input_shape, **aug_params)
@@ -443,7 +441,7 @@ class DataGenerator(object):
         """ Sets random augmentation parameters to apply to each minibatch.
         input_shape is shape of an image. See datumio.transforms.perturb_image."""
         if self.aug_tf is not None and self.do_static_aug:
-            print("[datagen] Warning: Static and Random augmentations are both set.")
+            print("[datagen:DataGenerator] Warning: Static and Random augmentations are both set.")
         
         self.do_rng_aug = True
         self.rng_aug_params = rng_aug_params
@@ -513,7 +511,9 @@ class DataGenerator(object):
             bX = []
             for i in xrange(nb_samples):
                 # load data
-                x = self.data_loader(dataPaths[b*batch_size+i], **self.data_loader_kwargs)
+                x = np.array(self.data_loader(dataPaths[b*batch_size+i],
+                                              **self.data_loader_kwargs), 
+                                              dtype=np.float32)
 
                 # apply zero-mean and unit-variance, if set
                 x = self._standardize(x)
@@ -540,14 +540,14 @@ class DataGenerator(object):
     def _set_global_zm(self, mean):
         """ Sets zero-mean to apply to each minibatch. See `set_zmuv` """
         if self.mean is not None: 
-            print("[datagen] Warning Mean was previosuly set. Replacing values...")
+            print("[datagen:DataGenerator] Warning: Mean was previosuly set. Replacing values...")
         self.do_global_zm = True
         self.mean = mean
         
     def _set_global_uv(self, std):
         """ Sets unit-variance to apply to each minibatch. See `set_zmuv` """
         if self.std is not None:
-            print("[datagen] Warning Std was previously set. Replacing values...")
+            print("[datagen:DataGenerator] Warning: Std was previously set. Replacing values...")
         self.do_global_uv = True
         self.std = std
 
