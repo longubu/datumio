@@ -47,21 +47,21 @@ class BatchGenerator(object):
     get_batch( ... ) and calling get_batch.next().
     """
     def __init__(self,
-                 do_global_zm=False,
-                 do_global_uv=False,
-                 do_samplewise_zm=False,
-                 do_samplewise_uv=False,
-                 do_static_aug=False,
-                 do_rng_aug=False,
+                 do_global_zm           = False,
+                 do_global_uv           = False,
+                 do_samplewise_zm       = False,
+                 do_samplewise_uv       = False,
+                 do_static_aug          = False,
+                 do_rng_aug             = False,
                  ):
                 
         self.__dict__.update(locals())
-        self.mean              = None
-        self.std               = None
-        self.samplewise_zm_axis = None
-        self.samplewise_uv_axis = None
-        self.aug_tf            = None
-        self.rng_aug_params    = None
+        self.mean                   = None
+        self.std                    = None
+        self.samplewise_zm_axis     = None
+        self.samplewise_uv_axis     = None
+        self.aug_tf                 = None
+        self.rng_aug_params         = None
         
     def set_global_zmuv(self, X, axis=None):
         """
@@ -321,23 +321,23 @@ class DataGenerator(object):
     get_batch( ... ) and calling get_batch.next().
     """
     def __init__(self,
-                 data_loader=default_data_loader,
-                 data_loader_kwargs={},
-                 do_global_zm=False,
-                 do_global_uv=False,
-                 do_samplewise_zm=False,
-                 do_samplewise_uv=False,
-                 do_static_aug=False,
-                 do_rng_aug=False,
+                 data_loader            = default_data_loader,
+                 data_loader_kwargs     = {},
+                 do_global_zm           = False,
+                 do_global_uv           = False,
+                 do_samplewise_zm       = False,
+                 do_samplewise_uv       = False,
+                 do_static_aug          = False,
+                 do_rng_aug             = False,
                  ):
                 
         self.__dict__.update(locals())
-        self.mean              = None
-        self.std               = None
-        self.samplewise_zm_axis = None
-        self.samplewise_uv_axis = None
-        self.aug_tf            = None
-        self.rng_aug_params    = None
+        self.mean                   = None
+        self.std                    = None
+        self.samplewise_zm_axis     = None
+        self.samplewise_uv_axis     = None
+        self.aug_tf                 = None
+        self.rng_aug_params         = None
         
     def set_data_loader(self, data_loader, data_loader_kwargs={}):
         """ Sets the function used to load images within the minibatches. The 
