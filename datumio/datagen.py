@@ -84,9 +84,9 @@ class BatchGenerator(object):
             take operation over flattened array.
             
         """
-        self._set_global_zm(X, axis=axis)
-        self._set_global_uv(X, axis=axis)
-    
+        zm_X = self._set_global_zm(X, axis=axis)
+        uv_X = self._set_global_uv(zm_X, axis=axis)
+        
     def set_samplewise_zmuv(self, axis=None):
         """
         Sets the axis over which to take the mean and std over each sample
@@ -207,6 +207,7 @@ class BatchGenerator(object):
             print("[datagen] Warning Mean was previosuly set. Replacing values...")
         self.do_global_zm = True
         self.mean = X.mean(axis=axis)
+        return X - self.mean
         
     def _set_global_uv(self, X, axis=None):
         """ Sets unit-variance to apply to each minibatch. See `set_zmuv` """
@@ -214,7 +215,8 @@ class BatchGenerator(object):
             print("[datagen] Warning Std was previously set. Replacing values...")
         self.do_global_uv = True
         self.std = X.std(axis=axis)
-            
+        return X / self.std
+        
     def _set_samplewise_zm(self, axis=None):
         """ Sets each sample to have zero-mean """
         self.do_samplewise_zm = True
@@ -322,7 +324,7 @@ class DataGenerator(object):
     the associated set_* procedures. Then call by creating the generator:
     get_batch( ... ) and calling get_batch.next().
     """
-    def __init__(self,  # use DataGenerator.set_* to set these parameters
+    def __init__(self,
                  data_loader=default_data_loader,
                  data_loader_kwargs={},
                  do_global_zm=False,
@@ -402,8 +404,15 @@ class DataGenerator(object):
         batches_std = []
         for X in self.get_batch(dataPaths, batch_size=batch_size, 
                                 shuffle=False, **get_batch_kwargs):
-            batches_mean.append(X.mean(axis=axis))
-            batches_std.append(X.std(axis=axis))
+            print X.mean()
+            mean = X.mean(axis=axis)
+            X = X - mean
+            print X.mean()
+            
+            std = X.std(axis=axis)
+            
+            batches_mean.append(mean)
+            batches_std.append(std)
             
         self.set_global_zmuv(np.mean(batches_mean, axis=0), np.mean(batches_std, axis=0))
         
@@ -490,7 +499,7 @@ class DataGenerator(object):
 
         # generate batches
         ndata = len(dataPaths)        
-        nb_batch = int(np.ceil(float(len(ndata))/self.batch_size))
+        nb_batch = int(np.ceil(float(ndata)/batch_size))
         for b in range(nb_batch):
             # determine batch size. all should eq batch_size except the last
             # batch of dataset, in cases where len(dataPaths) % batch_size != 0.

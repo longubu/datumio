@@ -42,6 +42,14 @@ for idx, (mb_x, mb_y) in enumerate(batchgen.get_batch(X, y,
     if (np.all(mb_y == y[idx*batch_size: (idx+1)*batch_size])):
         raise Exception("Minibatches in y are not correctly shuffled")  
 
+# test if not providing labels gives us only the batch
+mb_x = batchgen.get_batch(X, batch_size=batch_size).next()
+if type(mb_x) == tuple: 
+    raise Exception("Getting batch is returning labels when it should not be")
+else:
+    if mb_x.shape[0] != batch_size:
+        raise Exception("Without labels, returning incorrect len of batch")
+        
 # get a batch of non-shuffled data so we can visually
 # compare with zmuv & augmentations on dataset
 batchgen = dtd.BatchGenerator()
@@ -49,10 +57,13 @@ mb_x_og, mb_y_og = batchgen.get_batch(X, y, batch_size=batch_size, shuffle=False
 
 # test global zero-mean unit-variance
 # compute manually
-mean = X.mean(axis=0)
-std = X.std(axis=0)
+tmp_X = X.copy()
+mean = tmp_X.mean(axis=0)
+tmp_X = tmp_X - mean
+std = tmp_X.std(axis=0)
+
 zmuv_mb_x = mb_x_og - mean
-zmuv_mb_x = zmuv_mb_x / std
+zmuv_mb_x /= std
 
 # using batchgen 
 batchgen = dtd.BatchGenerator()
