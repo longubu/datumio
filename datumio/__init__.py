@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 datumio: Real-time augmentation of data for inputs into deep learning models.
 ==================================
