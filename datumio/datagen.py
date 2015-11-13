@@ -6,6 +6,7 @@ TODO:
     - is there a way to combine batch generator with dataloader?
         - create a base class 
     - take into account greyscale images
+    - do error checking for set_parametres
 """
 import numpy as np
 from PIL import Image
