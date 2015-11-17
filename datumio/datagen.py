@@ -7,6 +7,7 @@ TODO:
         - create a base class 
     - take into account greyscale images
     - do error checking for set_parametres
+    - divide by std, but make sure theres 1e-6 or something so it doesnt nan
 """
 import numpy as np
 from PIL import Image
@@ -101,6 +102,7 @@ class BatchGenerator(object):
          
         self.do_static_aug = True
         self.aug_tf = dtf.build_augmentation_transform(input_shape, **aug_params)
+        self.output_shape = aug_params.pop('output_shape', None)
     
     def set_rng_aug_params(self, rng_aug_params):
         """ Sets random augmentation parameters to apply to each minibatch.
@@ -181,7 +183,8 @@ class BatchGenerator(object):
 
                 # apply augmentations
                 if self.do_static_aug:
-                    x = dtf.transform_image(x, tf=self.aug_tf)
+                    x = dtf.transform_image(x, output_shape=self.output_shape, 
+                                            tf=self.aug_tf)
 
                 if self.do_rng_aug:
                     x = dtf.perturb_image(x, **self.rng_aug_params)
@@ -345,7 +348,7 @@ class DataGenerator(object):
         function should be of form data_loader(dataPath). See `default_data_loader`"""
         self.data_loader = data_loader
         self.data_loader_kwargs = data_loader_kwargs
-       
+        
     def set_global_zmuv(self, mean, std):
         """ Sets global mean and std to apply to every minibatch generation. Use 
         compute_and_set_zmuv to compute and set the zero-mean and zero-std 
@@ -437,6 +440,7 @@ class DataGenerator(object):
         
         self.do_static_aug = True
         self.aug_tf = dtf.build_augmentation_transform(input_shape, **aug_params)
+        self.output_shape = aug_params.pop('output_shape', None)
         
     def set_rng_aug_params(self, rng_aug_params):
         """ Sets random augmentation parameters to apply to each minibatch.
@@ -521,7 +525,8 @@ class DataGenerator(object):
                     
                 # apply augmentations
                 if self.do_static_aug:
-                    x = dtf.transform_image(x, tf=self.aug_tf)
+                    x = dtf.transform_image(x, output_shape=self.output_shape, 
+                                            tf=self.aug_tf)
                     
                 if self.do_rng_aug:
                     x = dtf.perturb_image(x, **self.rng_aug_params)
@@ -597,5 +602,4 @@ class DataGenerator(object):
             if self.rng_aug_params is None:
                 raise Exception("do_rng_aug is set but rng_aug_params is None"
                                 "\n... use `set_rng_aug_params` to set rng params")
-
-                                
+                                    

@@ -126,8 +126,7 @@ def perturb_image(img, output_shape=None, zoom_range=(1.0, 1.0), rotation_range=
     tf = build_random_augmentation_transform(input_shape, output_shape=output_shape,
                                              zoom_range=zoom_range, rotation_range=rotation_range,
                                              shear_range=shear_range, translation_range=translation_range)
-                    
-    return transform_image(img, tf=tf)
+    return transform_image(img, output_shape=output_shape, tf=tf)
 
 def transform_images(imgs, tf_image_kwargs={}):
     """ Transforms a batch of images. imgs should be of shape (n_imgs, height, width, channels).
