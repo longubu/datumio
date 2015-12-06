@@ -2,12 +2,15 @@
 Collection of data generator classes.
 
 TODO: 
+    - do warp kwargs for batchgenerator like datagen
     - multiprocessing
     - is there a way to combine batch generator with dataloader?
         - create a base class 
     - take into account greyscale images
     - do error checking for set_parametres
     - divide by std, but make sure theres 1e-6 or something so it doesnt nan
+    - if running multiple ret_opt kwargs (or any kwargs), ret_opts does a pop and 
+        will modify original dict.-- > fix for batchwise
 """
 import numpy as np
 from PIL import Image
@@ -432,7 +435,7 @@ class DataGenerator(object):
         self._set_samplewise_zm(axis=axis)
         self._set_samplewise_uv(axis=axis)
         
-    def set_static_aug_params(self, input_shape, aug_params):
+    def set_static_aug_params(self, input_shape, aug_params, warp_kwargs={}):
         """ Sets static augmentation parameters to apply to each minibatch.
         input_shape is shape of an image. See datumio.transforms.transform_image."""
         if self.rng_aug_params is not None and self.do_rng_aug: 
@@ -441,6 +444,7 @@ class DataGenerator(object):
         self.do_static_aug = True
         self.aug_tf = dtf.build_augmentation_transform(input_shape, **aug_params)
         self.output_shape = aug_params.pop('output_shape', None)
+        self.static_warp_kwargs = warp_kwargs
         
     def set_rng_aug_params(self, rng_aug_params):
         """ Sets random augmentation parameters to apply to each minibatch.
@@ -487,6 +491,7 @@ class DataGenerator(object):
             (bsize, height, width, channels).
         """
         # parse ret_opts
+        ret_opts = ret_opts.copy() # to not modify original object
         ret_dtype = ret_opts.pop('dtype', np.float32)
         ret_chw_order = ret_opts.pop('chw_order', False)
         
@@ -526,7 +531,8 @@ class DataGenerator(object):
                 # apply augmentations
                 if self.do_static_aug:
                     x = dtf.transform_image(x, output_shape=self.output_shape, 
-                                            tf=self.aug_tf)
+                                            tf=self.aug_tf, 
+                                            warp_kwargs=self.static_warp_kwargs)
                     
                 if self.do_rng_aug:
                     x = dtf.perturb_image(x, **self.rng_aug_params)
