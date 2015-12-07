@@ -11,6 +11,7 @@ import numpy as np
 from PIL import Image
 
 import transforms as dtf
+import buffering as dtb
 
 class BatchGenerator(object):
     """
@@ -54,7 +55,7 @@ class BatchGenerator(object):
                  do_static_aug          = False,
                  do_rng_aug             = False,
                  ):
-                
+        
         self.__dict__.update(locals())
         self.mean                   = None
         self.std                    = None
@@ -112,7 +113,7 @@ class BatchGenerator(object):
         self.do_rng_aug = True
         self.rng_aug_params = rng_aug_params # only set parameters instead of build tf
 
-    def get_batch(self, X, labels=None, batch_size=32, shuffle=True, 
+    def get_batch(self, X, labels=None, batch_size=32, shuffle=True, buffer_size=2,
                   rng=np.random, ret_opts={'dtype': np.float32, 'chw_order': False}):     
         """ 
         Iterable batch generator. Returns minibatches of the dataset (X, labels) with 
@@ -138,6 +139,10 @@ class BatchGenerator(object):
         shuffle: bool, optional
             Whether to shuffle X and labels before generating minibatches
         
+        buffer_size: int, optional
+            Number of batches to generate in buffer such that subsequent calls
+            return a preprocessed batch from the buffer and begin generating more.
+            
         rng: np.random.RandomState, optional
             Randomstate to shuffle X (if true) for reproducibility.
         
@@ -161,46 +166,49 @@ class BatchGenerator(object):
             rng.shuffle(idxs)
             X = X[idxs]
             if labels is not None: labels = labels[idxs]
-
-        # generate batches
-        nb_batch = int(np.ceil(float(X.shape[0])/batch_size))
-        for b in range(nb_batch):
-            # determine batch size. all should eq batch_size except the last
-            # batch of dataset, in cases where len(dataPaths) % batch_size != 0.
-            batch_end = (b+1)*batch_size
-            if batch_end > X.shape[0]:
-                nb_samples = X.shape[0] - b*batch_size
-            else:
-                nb_samples = batch_size
-
-            # get a minibatch
-            bX = []
-            for i in xrange(nb_samples):
-                x = np.array(X[b*batch_size+i], dtype=np.float32)
-                
-                # apply zero-mean and unit-variance, if set
-                x = self._standardize(x)
-
-                # apply augmentations
-                if self.do_static_aug:
-                    x = dtf.transform_image(x, output_shape=self.output_shape, 
-                                            tf=self.aug_tf,
-                                            warp_kwargs=self.static_warp_kwargs)
-
-                if self.do_rng_aug:
-                    x = dtf.perturb_image(x, **self.rng_aug_params)
+        
+        def gen_batch():
+            # generate batches
+            nb_batch = int(np.ceil(float(X.shape[0])/batch_size))
+            for b in range(nb_batch):
+                # determine batch size. all should eq batch_size except the last
+                # batch of dataset, in cases where len(dataPaths) % batch_size != 0.
+                batch_end = (b+1)*batch_size
+                if batch_end > X.shape[0]:
+                    nb_samples = X.shape[0] - b*batch_size
+                else:
+                    nb_samples = batch_size
+    
+                # get a minibatch
+                bX = []
+                for i in xrange(nb_samples):
+                    x = np.array(X[b*batch_size+i], dtype=np.float32)
                     
-                bX.append(x)
-
-            # clean up minibatch array for return
-            bX = np.array(bX, dtype=ret_dtype)
-            if ret_chw_order:
-                bX = bX.transpose(0, 3, 1, 2)
-                                        
-            if labels is not None:
-                yield bX, labels[b*batch_size:b*batch_size+nb_samples]
-            else:
-                yield bX
+                    # apply zero-mean and unit-variance, if set
+                    x = self._standardize(x)
+    
+                    # apply augmentations
+                    if self.do_static_aug:
+                        x = dtf.transform_image(x, output_shape=self.output_shape, 
+                                                tf=self.aug_tf,
+                                                warp_kwargs=self.static_warp_kwargs)
+    
+                    if self.do_rng_aug:
+                        x = dtf.perturb_image(x, **self.rng_aug_params)
+                        
+                    bX.append(x)
+    
+                # clean up minibatch array for return
+                bX = np.array(bX, dtype=ret_dtype)
+                if ret_chw_order:
+                    bX = bX.transpose(0, 3, 1, 2)
+                                            
+                if labels is not None:
+                    yield bX, labels[b*batch_size:b*batch_size+nb_samples]
+                else:
+                    yield bX
+            
+        return dtb.buffered_gen_threaded(gen_batch(), buffer_size=buffer_size)
         
     def _set_global_zm(self, X, axis=None):
         """ Sets zero-mean to apply to each minibatch. See `set_zmuv` """
@@ -335,7 +343,7 @@ class DataGenerator(object):
                  do_static_aug          = False,
                  do_rng_aug             = False,
                  ):
-                
+            
         self.__dict__.update(locals())
         self.mean                   = None
         self.std                    = None
@@ -453,7 +461,7 @@ class DataGenerator(object):
         self.do_rng_aug = True
         self.rng_aug_params = rng_aug_params
         
-    def get_batch(self, dataPaths, labels=None, batch_size=32, shuffle=True, 
+    def get_batch(self, dataPaths, labels=None, batch_size=32, shuffle=True, buffer_size=2,
                   rng=np.random, ret_opts={'dtype': np.float32, 'chw_order': False}): 
         """ 
         Iterable batch generator. Returns minibatches of the dataset (X, labels) 
@@ -479,6 +487,10 @@ class DataGenerator(object):
         shuffle: bool, optional
             Whether to shuffle X and labels before generating minibatches
         
+        buffer_size: int, optional
+            Number of batches to generate in buffer such that subsequent calls
+            return a preprocessed batch from the buffer and begin generating more.
+            
         rng: np.random.RandomState, optional
             Randomstate to shuffle X (if true) for reproducibility.
         
@@ -504,49 +516,52 @@ class DataGenerator(object):
             if labels is not None: labels = labels[idxs]
 
         # generate batches
-        ndata = len(dataPaths)        
-        nb_batch = int(np.ceil(float(ndata)/batch_size))
-        for b in range(nb_batch):
-            # determine batch size. all should eq batch_size except the last
-            # batch of dataset, in cases where len(dataPaths) % batch_size != 0.
-            batch_end = (b+1)*batch_size
-            if batch_end > ndata:
-                nb_samples = ndata - b*batch_size
-            else:
-                nb_samples = batch_size
-            
-            # get a minibatch
-            bX = []
-            for i in xrange(nb_samples):
-                # load data
-                x = np.array(self.data_loader(dataPaths[b*batch_size+i],
-                                              **self.data_loader_kwargs), 
-                                              dtype=np.float32)
-
-                # apply zero-mean and unit-variance, if set
-                x = self._standardize(x)
-                    
-                # apply augmentations
-                if self.do_static_aug:
-                    x = dtf.transform_image(x, output_shape=self.output_shape, 
-                                            tf=self.aug_tf, 
-                                            warp_kwargs=self.static_warp_kwargs)
-                    
-                if self.do_rng_aug:
-                    x = dtf.perturb_image(x, **self.rng_aug_params)
-                    
-                bX.append(x)
-            
-            # clean up minibatch array for return
-            bX = np.array(bX, dtype=ret_dtype)
-            if ret_chw_order:
-                bX = bX.transpose(0, 3, 1, 2)
+        def batch_gen():
+            ndata = len(dataPaths)        
+            nb_batch = int(np.ceil(float(ndata)/batch_size))
+            for b in range(nb_batch):
+                # determine batch size. all should eq batch_size except the last
+                # batch of dataset, in cases where len(dataPaths) % batch_size != 0.
+                batch_end = (b+1)*batch_size
+                if batch_end > ndata:
+                    nb_samples = ndata - b*batch_size
+                else:
+                    nb_samples = batch_size
                 
-            if labels is not None:
-                yield bX, labels[b*batch_size:b*batch_size+nb_samples]
-            else:
-                yield bX
+                # get a minibatch
+                bX = []
+                for i in xrange(nb_samples):
+                    # load data
+                    x = np.array(self.data_loader(dataPaths[b*batch_size+i],
+                                                  **self.data_loader_kwargs), 
+                                                  dtype=np.float32)
+    
+                    # apply zero-mean and unit-variance, if set
+                    x = self._standardize(x)
+                        
+                    # apply augmentations
+                    if self.do_static_aug:
+                        x = dtf.transform_image(x, output_shape=self.output_shape, 
+                                                tf=self.aug_tf, 
+                                                warp_kwargs=self.static_warp_kwargs)
+                        
+                    if self.do_rng_aug:
+                        x = dtf.perturb_image(x, **self.rng_aug_params)
+                        
+                    bX.append(x)
                 
+                # clean up minibatch array for return
+                bX = np.array(bX, dtype=ret_dtype)
+                if ret_chw_order:
+                    bX = bX.transpose(0, 3, 1, 2)
+                    
+                if labels is not None:
+                    yield bX, labels[b*batch_size:b*batch_size+nb_samples]
+                else:
+                    yield bX
+            
+        return dtb.buffered_gen_threaded(batch_gen(), buffer_size=buffer_size)
+        
     def _set_global_zm(self, mean):
         """ Sets zero-mean to apply to each minibatch. See `set_zmuv` """
         if self.mean is not None: 
@@ -606,4 +621,3 @@ class DataGenerator(object):
             if self.rng_aug_params is None:
                 raise Exception("do_rng_aug is set but rng_aug_params is None"
                                 "\n... use `set_rng_aug_params` to set rng params")
-                                    
