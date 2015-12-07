@@ -520,6 +520,7 @@ class DataGenerator(object):
             ndata = len(dataPaths)        
             nb_batch = int(np.ceil(float(ndata)/batch_size))
             for b in range(nb_batch):
+                print("On batch %i out of %i"%(b+1, nb_batch))
                 # determine batch size. all should eq batch_size except the last
                 # batch of dataset, in cases where len(dataPaths) % batch_size != 0.
                 batch_end = (b+1)*batch_size
