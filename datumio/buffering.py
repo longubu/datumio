@@ -1,3 +1,7 @@
+"""
+Copied directly from Kaggle plankton winners:
+https://github.com/benanne/kaggle-ndsb
+"""
 import multiprocessing as mp
 import Queue
 import threading

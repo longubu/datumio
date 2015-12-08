@@ -13,7 +13,7 @@ img = np.array(Image.open(img_path, mode = 'r'))
 
 # set up augmentation parameters
 hw = (img.shape[0], img.shape[1])
-crop_percentage = 0.5
+crop_percentage = 0.6
 crop_hw = (hw[0] - int(hw[0]*crop_percentage), hw[1] - int(hw[1]*crop_percentage))
 
 rng = np.random.RandomState(seed=435)
@@ -23,7 +23,8 @@ random_augmentation_parmas = [
     {'shear_range': (-15, 15)},
     {'translation_range': (-200, 250)},
     {'do_flip_lr': True},
-    {'allow_stretch': True, 'zoom_range': (1/1.5, 1.5)},
+#    {'allow_stretch': True, 'zoom_range': (1/1.5, 1.5)},
+    {'rescale_shape': (hw[0]/2., hw[1]/2.)}
 ]
 nAugmentations = len(random_augmentation_parmas)
 
@@ -50,8 +51,6 @@ for it, rng_augmentation_param in enumerate(random_augmentation_parmas):
     # plot image
     ax.imshow(img_wf.astype(np.uint8))
     ax.set_title("%s"%rng_augmentation_param)
-    ax.set_xticks([])
-    ax.set_yticks([])
 
 # plot image with all augmentations at once
 ax = axes[it + 2]
@@ -68,9 +67,37 @@ img_wf = dtf.perturb_image(img, output_shape=crop_hw, rng=rng, **rnd_params)
 ax.imshow(img_wf.astype(np.uint8))
 ax.set_title("All Augmentation + Crop")
 
+# plot image with some augmentations and rescale to check if rescale works
+plt.figure(); plt.clf()
+re_aug_params = dict(rotation_range = (-46, -45),
+                     translation_range = (-25, -24),
+                     do_flip_lr = True,
+                     rescale_shape = (hw[0]/2., hw[1]/2.),
+                     )
+
+plt.subplot(311)
+img_wf = dtf.perturb_image(img, **re_aug_params)
+plt.imshow(img_wf.astype(np.uint8))
+plt.title("Rescale with some aug, cropped to rescale")
+plt.subplot(312)
+img_wf = dtf.perturb_image(img, output_shape=hw, **re_aug_params)
+plt.imshow(img_wf.astype(np.uint8))
+plt.title("Rescale with some aug and OUTWARD crop")
+plt.subplot(313)
+img_wf = dtf.perturb_image(img, output_shape=(hw[0]/3., hw[1]/3.), **re_aug_params)
+plt.imshow(img_wf.astype(np.uint8))
+plt.title("Rescale with some aug and INWARD crop")
+
+random_augmentation_parmas = {'zoom_range': (1/1.5, 1/1.4),
+                              'rotation_range': (-30, -29),
+                              'shear_range': (-15, -14),
+                              'translation_range': (-25, -24),
+                              'do_flip_lr': True,
+                              'rescale_shape': (hw[0]/2., hw[1]/2.)}
+
 # test batch random augmentaitons
 imgs = np.array([img, img])
-t_imgs = dtf.perturb_images(imgs, ptb_image_kwargs=rnd_params)
+t_imgs = dtf.perturb_images(imgs, ptb_image_kwargs=random_augmentation_parmas)
 plt.figure(); plt.clf()
 plt.subplot(311)
 plt.title("Batch Rng  TF1")

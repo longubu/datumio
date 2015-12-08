@@ -116,18 +116,27 @@ import matplotlib.pyplot as plt
 plt.figure(1, figsize=(12,10)); plt.clf()
 fig, axes = plt.subplots(4, 3, num=1)
 for idx, ax in enumerate(axes[:, 0]):
+    if idx ==0:
+        ax.set_title("Original %s"%(y_train[-idx]))
+    else:
+        ax.set_title('%s'%y_train[-idx])
     ax.imshow(X_train[-idx].transpose(1,2,0))
-    ax.set_title('%s'%y_train[-idx])
     plt.axis('off')
 
 for idx, ax in enumerate(axes[:, 1]):
+    if idx == 0:
+        ax.set_title("Datumio %s"%(d_Y_batch[-idx]))
+    else:
+        ax.set_title('%s'%(Y_batch[-idx]))
     ax.imshow(d_X_batch[-idx].transpose(1,2,0))
-    ax.set_title('%s'%d_Y_batch[-idx])
     plt.axis('off')
 
 for idx, ax in enumerate(axes[:, 2]):
+    if idx == 0:
+        ax.set_title("Keras: %s"%(Y_batch[-idx]))
+    else:
+        ax.set_title('%s'%(Y_batch[-idx]))
     ax.imshow(X_batch[-idx].transpose(1,2,0))
-    ax.set_title('%s'%(Y_batch[-idx]))
     plt.axis('off')
 
 plt.tight_layout()    

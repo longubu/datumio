@@ -2,9 +2,6 @@
 Collection of data generator classes.
 
 TODO: 
-    - multiprocessing
-    - is there a way to combine batch generator with dataloader?
-        - create a base class 
     - take into account greyscale images
 """
 import numpy as np

@@ -22,6 +22,7 @@ augmentation_params = dict( rotation = 45,
                             shear = 15,
                             translation = (int(hw[0]*0.1), -int(hw[1]*0.2)),
                             flip_lr = True,
+                            rescale_shape = (hw[0]/2., hw[1]/2.)
                             )
 nAugmentations = len(augmentation_params)
 
@@ -45,12 +46,10 @@ for it, (key, param) in enumerate(augmentation_params.iteritems()):
     
     # transform image
     img_wf = dtf.transform_image(img, **augmentation_param)
-    
+
     # plot image
     ax.imshow(img_wf.astype(np.uint8))
     ax.set_title("Augmentation Param: %s = %s"%(key, param))
-    ax.set_xticks([])
-    ax.set_yticks([])
 
 # plot image with all augmentations at once
 ax = axes[it + 2]
@@ -65,6 +64,27 @@ ax = axes[it + 3]
 img_wf = dtf.transform_image(img, output_shape=crop_hw, **augmentation_params)
 ax.imshow(img_wf.astype(np.uint8))
 ax.set_title("All Augmentation + Crop")
+
+# plot image with some augmentations and rescale to check if rescale works
+plt.figure(); plt.clf()
+re_aug_params = dict(rotation = 45,
+                     translation = (50, -50),
+                     flip_lr = True,
+                     rescale_shape = (hw[0]/2., hw[1]/2.),
+                     )
+
+plt.subplot(311)
+img_wf = dtf.transform_image(img, **re_aug_params)
+plt.imshow(img_wf.astype(np.uint8))
+plt.title("Rescale with some aug, cropped to rescale")
+plt.subplot(312)
+img_wf = dtf.transform_image(img, output_shape=hw, **re_aug_params)
+plt.imshow(img_wf.astype(np.uint8))
+plt.title("Rescale with some aug and OUTWARD crop")
+plt.subplot(313)
+img_wf = dtf.transform_image(img, output_shape=(hw[0]/3., hw[1]/3.), **re_aug_params)
+plt.imshow(img_wf.astype(np.uint8))
+plt.title("Rescale with some aug and INWARD crop")
 
 # test batch transformations vs regular transformation
 imgs = np.array([img, img])

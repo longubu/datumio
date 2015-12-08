@@ -1,9 +1,5 @@
 """
 Container of augmentation procedures. 
-
-TODO:
-    Include downsampling transform
-    
 """
 import skimage.transform
 import numpy as np
@@ -11,8 +7,9 @@ import numpy as np
 #==============================================================================
 # transform image
 #==============================================================================
-def transform_image(img, output_shape=None, tf=None, zoom=(1.0, 1.0), rotation=0., shear=0., 
-                   translation=(0, 0), flip_lr=False, warp_kwargs= {}):
+def transform_image(img, tf=None, rescale_shape=None, output_shape=None, 
+                    zoom=(1.0, 1.0), rotation=0., shear=0., 
+                    translation=(0, 0), flip_lr=False, warp_kwargs= {}):
     """
     Transforms image. Crops augmented image if output_shape is not None.
 
@@ -24,13 +21,14 @@ def transform_image(img, output_shape=None, tf=None, zoom=(1.0, 1.0), rotation=0
     tf: skimage.transform._geometric.SimilarityTransform, optional
         A built skimage.transform.SimilarityTransform, containing all the affine
         transformations to be applied to `img`. If set, will override `all` other aug params.
+    
+    rescale_shape: tuple or list of len(2) of ints
+        Downscales (or upscales) input_image to shape rescale_shape.
+        If None (default), rescale_shape = input_shape
         
     output_shape: tuple or list of len(2) of ints
-        Center-crop shape of the resulting output transformed image. For 
-        transformed images, rotations/zooms typically create regions of 
-        unnecessary pixels, center cropping while doing this is a convenience with no
-        cost of speed.
-        If None (default), output_shape = input_shape
+        Center-crop shape of the resulting output transformed image.
+        If None (default), output_shape = rescale_shape (or input_shape)
 
     zoom: tuple or list of len(2) of floats
         E.g: (zoom_row, zoom_col). Scale image rows by zoom_row and image cols 
@@ -62,13 +60,17 @@ def transform_image(img, output_shape=None, tf=None, zoom=(1.0, 1.0), rotation=0
     """
     if tf is None:
         input_shape = img.shape[:2]
-        tf = build_augmentation_transform(input_shape, output_shape=output_shape, 
+        if rescale_shape is None: rescale_shape = input_shape
+        if output_shape is None: output_shape = rescale_shape
+      
+        tf = build_augmentation_transform(input_shape, rescale_shape=rescale_shape, output_shape=output_shape, 
                                           zoom=zoom, rotation=rotation, shear=shear,
                                           translation=translation, flip_lr=flip_lr)
     return fast_warp(img, tf, output_shape=output_shape, **warp_kwargs)
 
-def perturb_image(img, output_shape=None, zoom_range=(1.0, 1.0), rotation_range=(0., 0.), 
-                  shear_range=(0., 0.), translation_range=(0, 0), do_flip_lr=False, 
+def perturb_image(img, rescale_shape=None, output_shape=None, zoom_range=(1.0, 1.0), 
+                  rotation_range=(0., 0.), shear_range=(0., 0.), 
+                  translation_range=(0, 0), do_flip_lr=False, 
                   allow_stretch=False, rng=np.random, warp_kwargs = {}):
     """
     Applies random augmentation of image. Crops augmented image if output_shape is not None.
@@ -78,11 +80,13 @@ def perturb_image(img, output_shape=None, zoom_range=(1.0, 1.0), rotation_range=
     img: ndarray
         Input image to be transformed of shape (row, col, channels) or (row, col) if greyscale
     
-    output_shape: tuple or list of len(2) of ints, optional
-        Center-crop shape of the resulting output transformed image. For 
-        transformed images, rotations/zooms typically create regions of 
-        unnecessary pixels, center cropping while doing this is a convenience with no
-        cost of speed. If None (default), output_shape = input_shape
+    rescale_shape: tuple or list of len(2) of ints
+        Downscales (or upscales) input_image to shape rescale_shape.
+        If None (default), rescale_shape = input_shape
+        
+    output_shape: tuple or list of len(2) of ints
+        Center-crop shape of the resulting output transformed image.
+        If None (default), output_shape = rescale_shape (or input_shape)
         
     zoom_range: list or tuple of ints, optional
         E.g: (zoom_low, zoom_high). Will zoom randomly in x&y (at the same rate)
@@ -123,26 +127,33 @@ def perturb_image(img, output_shape=None, zoom_range=(1.0, 1.0), rotation_range=
         will return transformed image of same dimension as input.
     """
     input_shape = img.shape[:2]
-    tf = build_random_augmentation_transform(input_shape, output_shape=output_shape,
+    if rescale_shape is None: rescale_shape = input_shape
+    if output_shape is None: output_shape = rescale_shape
+        
+    tf = build_random_augmentation_transform(input_shape, rescale_shape=rescale_shape, output_shape=output_shape,
                                              zoom_range=zoom_range, rotation_range=rotation_range,
                                              shear_range=shear_range, translation_range=translation_range)
     return transform_image(img, output_shape=output_shape, tf=tf, warp_kwargs=warp_kwargs)
 
+# batch tfs broken right now
 def transform_images(imgs, tf_image_kwargs={}):
     """ Transforms a batch of images. imgs should be of shape (n_imgs, height, width, channels).
     See `transform_image` for more information on tf_image_kwargs. Not using direct 
     implementation of `transform_images` to optimize speed."""
     bsize, height, width, chan = imgs.shape
     
+    rescale_shape = tf_image_kwargs.pop('rescale_shape', None)
+    output_shape = tf_image_kwargs.pop('output_shape', None)
+    
+    if rescale_shape is None:rescale_shape = (height, width)
+    if output_shape is None: output_shape = rescale_shape
+    
     warp_kwargs = tf_image_kwargs.pop('warp_kwargs', {})
     tf = tf_image_kwargs.pop('tf', None) 
     if tf is None:
         input_shape = (height, width)
-        tf = build_augmentation_transform(input_shape, **tf_image_kwargs)        
-    
-    output_shape = tf_image_kwargs.pop('output_shape', None)
-    if output_shape is None:
-        output_shape = (height, width)
+        tf = build_augmentation_transform(input_shape, rescale_shape=rescale_shape,
+                                          output_shape=output_shape, **tf_image_kwargs)        
     
     t_imgs = np.zeros([bsize] + list(output_shape) + [chan], dtype=np.float32)
     for it, img in enumerate(imgs):
@@ -152,15 +163,19 @@ def transform_images(imgs, tf_image_kwargs={}):
 
 def perturb_images(imgs, ptb_image_kwargs={}):
     """ DOCUMENT_HERE """
+    rescale_shape = ptb_image_kwargs.pop('rescale_shape', None)
     output_shape = ptb_image_kwargs.pop('output_shape', None)
-    if output_shape is None:
-        output_shape = imgs.shape[1:3]
+    
+    if rescale_shape is None: rescale_shape = imgs.shape[1:3]
+    if output_shape is None: output_shape = rescale_shape
     
     t_imgs = np.zeros([imgs.shape[0]] + list(output_shape) + [imgs.shape[3]], dtype=np.float32)
     for it, img in enumerate(imgs):
-        t_imgs[it] = perturb_image(img, output_shape=output_shape, **ptb_image_kwargs)
+        t_imgs[it] = perturb_image(img, rescale_shape=rescale_shape, 
+                                   output_shape=output_shape, **ptb_image_kwargs)
         
     return t_imgs
+# batch tfs broken right now
     
 def fast_warp(img, tf, output_shape=None, mode='constant', order=1):
     """
@@ -213,6 +228,46 @@ def fast_warp(img, tf, output_shape=None, mode='constant', order=1):
 #==============================================================================
 #  build affine transformations
 #==============================================================================
+def build_rescale_transform(input_shape, rescale_shape, output_shape):
+    """
+    _DOC_FROM_Kaggle_Plankton_winners
+    estimating the correct rescaling transform is slow, so just use the
+    downscale_factor to define a transform directly. This probably isn't 
+    100% correct, but it shouldn't matter much in practice.
+    
+    Parameters
+    ---------
+    input_shape: tuple or list of len(2) of ints
+        Input image shape of form (rows, cols) to be transformed.
+    
+    rescale_shape: tuple or list of len(2) of ints
+        Downscales (or upscales) input_image to shape rescale_shape.
+        If None (default), rescale_shape = input_shape
+        
+    output_shape: tuple or list of len(2) of ints
+        Center-crop shape of the resulting output transformed image.
+        If None (default), output_shape = rescale_shape (or input_shape)
+    
+    Returns
+    ---------
+    tf: skimage.transform._geometric.SimilarityTransform
+        Built affine transformation for downsampling and centering.    
+    
+    """
+    # rescale is a downsampling factor, e.g. 2 - downsamples 2x
+    rescale_factor = (input_shape[0] / float(rescale_shape[0]),
+                      input_shape[1] / float(rescale_shape[1]))
+    
+    rows, cols = input_shape
+    trows, tcols = output_shape
+    tform_ds = skimage.transform.AffineTransform(scale=(rescale_factor[0], rescale_factor[1]))
+    
+    # centering    
+    shift_x = cols / (2.0 * rescale_factor[1]) - tcols / 2.0
+    shift_y = rows / (2.0 * rescale_factor[0]) - trows / 2.0
+    tform_shift_ds = skimage.transform.SimilarityTransform(translation=(shift_x, shift_y))
+    return tform_shift_ds + tform_ds
+
 def build_centering_transform(image_shape, output_shape):
     """
     Builds a transform that shifts the center of the `image_shape` to 
@@ -257,7 +312,9 @@ def build_center_uncenter_transforms(image_shape):
     tform_center = skimage.transform.SimilarityTransform(translation=center_shift)
     return tform_center, tform_uncenter
     
-def build_augmentation_transform(input_shape, output_shape=None, zoom=(1.0, 1.0), rotation=0., shear=0., translation=(0, 0), flip_lr=False): 
+def build_augmentation_transform(input_shape, rescale_shape=None, output_shape=None, 
+                                 zoom=(1.0, 1.0), rotation=0., shear=0., 
+                                 translation=(0, 0), flip_lr=False): 
     """
     Wrapper to build an affine transformation matrix applies:
     [zoom, rotate, shear, translate, and flip_lr, flip_ud]
@@ -273,11 +330,13 @@ def build_augmentation_transform(input_shape, output_shape=None, zoom=(1.0, 1.0)
     input_shape: tuple or list of len(2) of ints
         Input image shape of form (rows, cols) to be transformed.
     
-    output_shape: tuple or list of len(2) of ints, optional
-        Center-crop shape of the resulting output transformed image. For 
-        transformed images, rotations/zooms typically create regions of 
-        unnecessary pixels, center cropping while doing this is a convenience with no
-        cost of speed. If None (default), output_shape = input_shape
+    rescale_shape: tuple or list of len(2) of ints
+        Downscales (or upscales) input_image to shape rescale_shape.
+        If None (default), rescale_shape = input_shape
+        
+    output_shape: tuple or list of len(2) of ints
+        Center-crop shape of the resulting output transformed image.
+        If None (default), output_shape = rescale_shape (or input_shape)
 
     zoom: tuple or list of len(2) of floats, optional
         E.g: (zoom_col, zoom_row). Scale image rows by zoom_row and image cols 
@@ -313,17 +372,24 @@ def build_augmentation_transform(input_shape, output_shape=None, zoom=(1.0, 1.0)
     # A negative x SHOULD move the image to the left by x. Skimage default does otherwise.
     xt = -1*translation[0]
 
-    if output_shape is None: output_shape = input_shape
-    tform_centering = build_centering_transform(input_shape, output_shape)
+    if rescale_shape is None: rescale_shape = input_shape
+    if output_shape is None: output_shape = rescale_shape
+
+    if rescale_shape != input_shape:
+        tform_centering = build_rescale_transform(input_shape, rescale_shape, output_shape) # also centers
+    else:
+        tform_centering = build_centering_transform(input_shape, output_shape)
+    
     tform_center, tform_uncenter = build_center_uncenter_transforms(input_shape)
     tform_augment = skimage.transform.AffineTransform(scale=(1/float(zoom[0]), 1/float(zoom[1])),
                       rotation=np.deg2rad(rotation), shear=np.deg2rad(shear), translation=(xt, translation[1]))
     tf = tform_centering + tform_uncenter + tform_augment + tform_center # order of addition matters
     return tf
 
-def build_random_augmentation_transform(input_shape, output_shape=None, zoom_range=(1.0, 1.0), 
-                                        rotation_range=(0., 0.), shear_range=(0., 0.), 
-                                        translation_range=(0, 0), do_flip_lr=False, allow_stretch=False, 
+def build_random_augmentation_transform(input_shape, rescale_shape=None, output_shape=None, 
+                                        zoom_range=(1.0, 1.0), rotation_range=(0., 0.), 
+                                        shear_range=(0., 0.), translation_range=(0, 0), 
+                                        do_flip_lr=False, allow_stretch=False, 
                                         rng=np.random):
     """
     Randomly perturbs image using affine transformations.
@@ -333,11 +399,13 @@ def build_random_augmentation_transform(input_shape, output_shape=None, zoom_ran
     input_shape: tuple or list of len(2) of ints
         Input image shape of form (rows, cols) to be transformed.
     
-    output_shape: tuple or list of len(2) of ints, optional
-        Center-crop shape of the resulting output transformed image. For 
-        transformed images, rotations/zooms typically create regions of 
-        unnecessary pixels, center cropping while doing this is a convenience with no
-        cost of speed. If None (default), output_shape = input_shape
+    rescale_shape: tuple or list of len(2) of ints
+        Downscales (or upscales) input_image to shape rescale_shape.
+        If None (default), rescale_shape = input_shape
+        
+    output_shape: tuple or list of len(2) of ints
+        Center-crop shape of the resulting output transformed image.
+        If None (default), output_shape = rescale_shape (or input_shape)
         
     zoom_range: list or tuple of ints, optional
         E.g: (zoom_low, zoom_high). Will zoom randomly in x&y (at the same rate)
@@ -400,6 +468,6 @@ def build_random_augmentation_transform(input_shape, output_shape=None, zoom_ran
         zoom_x = zoom_y = np.exp(rng.uniform(*log_zoom_range))
     # the range should be multiplicatively symmetric, so [1/1.1, 1.1] instead of [0.9, 1.1] makes more sense.
         
-    return build_augmentation_transform(input_shape=input_shape, output_shape=output_shape,
+    return build_augmentation_transform(input_shape=input_shape, rescale_shape=rescale_shape, output_shape=output_shape,
                                         zoom=(zoom_x, zoom_y), rotation=rotation, shear=shear, 
                                         translation=translation, flip_lr=flip_lr)
