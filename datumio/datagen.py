@@ -343,7 +343,7 @@ class DataGenerator(object):
                  do_static_aug          = False,
                  do_rng_aug             = False,
                  ):
-            
+                     
         self.__dict__.update(locals())
         self.mean                   = None
         self.std                    = None
