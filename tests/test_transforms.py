@@ -22,6 +22,7 @@ augmentation_params = dict( rotation = 45,
                             shear = 15,
                             translation = (int(hw[0]*0.1), -int(hw[1]*0.2)),
                             flip_lr = True,
+                            flip_ud = True,
                             )
 nAugmentations = len(augmentation_params)
 
