@@ -169,7 +169,7 @@ def perturb_images(imgs, ptb_image_kwargs={}):
         
     return t_imgs
     
-def fast_warp(img, tf, output_shape=None, mode='constant', order=1):
+def fast_warp(img, tf, output_shape=None, order=1, mode='constant', cval=0):
     """
     This wrapper function is faster than skimage.transform.warp
     
@@ -185,11 +185,7 @@ def fast_warp(img, tf, output_shape=None, mode='constant', order=1):
     output_shape: tuple or list of len(2) of ints, optional
         Center-crop :math:`tf(img)` to dimensions of `output_shape`.
         If None (default), output_shape = (`img.shape[0]`, `img.shape[1]`).
-    
-    mode: str, optional
-        Points outside the boundaries of the input are filled according to the
-        given mode('constant', 'nearest', 'reflect', 'wrap').
-        
+
     order: int, optional
         The order of interpolation. The order has to be in the range 0-5:
          - 0: Nearest-neighbor
@@ -199,6 +195,13 @@ def fast_warp(img, tf, output_shape=None, mode='constant', order=1):
          - 4: Bi-quartic
          - 5: Bi-quintic
          
+    mode: str, optional
+        Points outside the boundaries of the input are filled according to the
+        given mode('constant', 'nearest', 'reflect', 'wrap').
+         
+    cval: int, optional
+        Value to fill for points outside boundaries.
+    
     Returns
     ---------
     warped: ndarray of np.float32
@@ -207,13 +210,13 @@ def fast_warp(img, tf, output_shape=None, mode='constant', order=1):
     """
     m = tf.params # tf._matrix is deprecated. m is a 3x3 matrix
     if len(img.shape) < 3: # if image is greyscale
-        img_wf = skimage.transform._warps_cy._warp_fast(img, m, output_shape=output_shape, mode=mode, order=order)
+        img_wf = skimage.transform._warps_cy._warp_fast(img, m, output_shape=output_shape, order=order, mode=mode, cval=cval)
     else: # if image is not greyscale, e.g. RGB, RGBA, etc.
         nChannels = img.shape[-1]
         if output_shape is None: output_shape = (img.shape[0], img.shape[1])
         img_wf = np.empty((output_shape[0], output_shape[1], nChannels), dtype='float32') # (height, width, channels)
         for k in xrange(nChannels):
-            img_wf[..., k] = skimage.transform._warps_cy._warp_fast(img[..., k], m, output_shape=output_shape, mode=mode)
+            img_wf[..., k] = skimage.transform._warps_cy._warp_fast(img[..., k], m, mode=mode, output_shape=output_shape, cval=cval)
 
     return img_wf
 
