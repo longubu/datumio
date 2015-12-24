@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Setup datumio. 
 
@@ -14,14 +13,14 @@ from setuptools import find_packages
 
 
 setup(name='datumio',
-      version='0.0.0',
+      version='0.1.0',
       description='Real-time augmentation of data for inputs into deep learning models.',
       author='Long Van Ho',
       author_email='longvho916@gmail.com',
       url='https://github.com/longubu/datumio',
       download_url='---',
       license='---',
-      install_requires=[],
+      install_requires=['skimage', 'numpy', 'PIL'],
       extras_require={
           '': [''],
       },

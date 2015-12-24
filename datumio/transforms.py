@@ -1,15 +1,11 @@
 """
 Container of augmentation procedures. 
-
-TODO:
-    Include downsampling transform
-    
 """
 import skimage.transform
 import numpy as np
 
 #==============================================================================
-# transform image
+# transformations directly on images
 #==============================================================================
 def transform_image(img, output_shape=None, tf=None, zoom=(1.0, 1.0), rotation=0., shear=0., 
                    translation=(0, 0), flip_lr=False, flip_ud=False, warp_kwargs= {}):
@@ -221,7 +217,7 @@ def fast_warp(img, tf, output_shape=None, order=1, mode='constant', cval=0):
     return img_wf
 
 #==============================================================================
-#  build affine transformations
+# affine transformations - transformers
 #==============================================================================
 def build_centering_transform(image_shape, output_shape):
     """

@@ -1,3 +1,9 @@
+"""
+Buffering utilities
+
+Copied from Kaggle National Data Science Bowl's first place winners.
+Original in: https://github.com/benanne/kaggle-ndsb/blob/master/buffering.py
+"""
 import multiprocessing as mp
 import Queue
 import threading
