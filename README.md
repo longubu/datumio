@@ -67,9 +67,9 @@ import datumio.datagen as dtd
 
 # Get paths to data
 X_train = 'array-of-paths-to-train-data'
-y_train = 'array-of-paths-to-train-labels'
+y_train = 'array-of-train-labels'
 X_valid = 'array-of-paths-to-valid-data'
-y_valid = 'array-of-paths-to-valid-labels'
+y_valid = 'array-of-valid-labels'
 
 # Create data loder to load up each img with custom transformations
 def data_loader(data_path):
@@ -117,6 +117,8 @@ model.add(Activation('softmax'))
 model.compile(loss='categorical_crossentropy', optimizer='sgd')
 
 for epoch in range(10):
+    # load batches and apply random augmentations on-the-fly
     for X_batch, y_batch in datagen.flow(X_train, y_train, shuffle=True, batch_size=32):
+    	# train model on minibatch
         loss = model.train_on_batch(X_batch, y_batch)
 ```
