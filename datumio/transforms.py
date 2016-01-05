@@ -1,9 +1,9 @@
 """
 datumio.transforms
 ---------
-General image processing functions that wrap sci-kit core images functions
-more cleanly and intuitively, and may be even faster than their wrapped
-functions. Includes functions for random transformations.
+General image processing functions that wrap scikit-image core functions
+more cleanly and intuitively. Includes functions for performing
+static and random transformations on images.
 
 Possible Transforms
 ---------
@@ -17,12 +17,52 @@ Possible Transforms
 
 General use functions
 ---------
-transform_image: Transform an image given set augmentation arguments
+- transform_image: Transform an image given set augmentation arguments
+- perturb_image: Randomly transforms an image given ranges specified in
+    `augmentation` args
 
-perturb_image: Randomly transforms an image given ranges in augmentation args
+Many of the functions were copied and modified from Kaggle National
+Data Science Bowl's 1st place winners.
+Original in: https://github.com/benanne/kaggle-ndsb/blob/master/buffering.py
+
+COPYRIGHT
+---------
+All contributions by Sander Dielman:
+Copyright (c) 2015 Sander Dieleman
+All rights reserved.
+
+All contributions by Long Van Ho:
+Copyright (c) 2015 Long Van Ho
+All rights reserved.
+
+All other contributions:
+Copyright (c) 2015, the respective contributors.
+All rights reserved.
+
+LICENSE
+---------
+The MIT License (MIT)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN
+
 """
-import skimage.transform
 import numpy as np
+import skimage.transform
 
 
 def transform_image(img, output_shape=None, tf=None, zoom=(1.0, 1.0),
@@ -284,8 +324,7 @@ def fast_warp(img, tf, output_shape=None, order=1, mode='constant', cval=0):
 
 
 def build_centering_transform(image_shape, output_shape):
-    """
-    Builds a transform that shifts the center of the `image_shape` to
+    """Builds a transform that shifts the center of the `image_shape` to
     center of `output_shape`.
 
     Parameters

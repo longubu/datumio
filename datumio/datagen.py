@@ -10,15 +10,15 @@ BatchGenerator:
 DataGenerator:
     Mini-batch generator for datasets that can't entirely fit into memory.
 
-TODO
----------
-- multiprocessing
-- create base class for BatchGenerator and DataGenerator
-- take into account greyscale images
+TODO(Long): take into account greyscale images
+TODO(Long): Create base class for Batch & Data Generator & implement decorators
+
+Idea taken from Keras's implementation: Keras.preprocessing.image.py
 """
 import numpy as np
 from PIL import Image
 
+# Local imports
 import transforms as dtf
 import buffering as dtb
 
