@@ -26,36 +26,64 @@ import buffering as dtb
 class BatchGenerator(object):
     """
     """
-    def __init__(self, X, y=None, dataset_mean=False, dataset_std=False,
-                 dataset_axis=0, batch_mean=False, batch_std=False,
-                 batch_axis=0, sample_mean=False, sample_std=False,
-                 sample_axis=0, input_shape=None, aug_params=None,
-                 rng_aug_params=None):
+    def __init__(self, X, y=None,
+                 batch_size=32, shuffle=False, rng_seed=None,
+                 input_shape=None, aug_params=None, rng_aug_params=None,
+                 dataset_zmuv=False, dataset_axis=None,
+                 batch_zmuv=False, batch_axis=None,
+                 sample_zmuv=False, sample_axis=None):
 
-        self.__dict__.update(locals())
+        # initial default states
+        self.batch_size = batch_size
+        self.aug_params = aug_params
+        self.rng_aug_params = rng_aug_params
+        self.dataset_zmuv = dataset_zmuv
+        self.dataset_axis = dataset_axis
+        self.batch_zmuv = batch_zmuv
+        self.batch_axis = batch_axis
+        self.sample_zmuv = sample_zmuv
+        self.sample_axis = sample_axis
 
-        # make sure input dataset is ndarray for convenience
-        self.X = np.array(X)
-        if y is not None: self.y = np.array(y)
+        # shuffle data based on rng, if supplied
+        if rng_seed is None:
+            rng = np.random
+        else:
+            rng = np.random.RandomState(seed=rng_seed)
 
-        # additional initial default states
+        # index to iterate through X, y
+        idxs = range(len(X))
+        if shuffle:
+            rng.shuffle(idxs)
+
+        # set input data & truth
+        self.X = np.array(X)[idxs]
+        if y is not None:
+            self.y = np.array(y)[idxs]
+        else:
+            self.y = None
+
+        if input_shape is not None:
+            self.input_shape = input_shape
+        else:
+            self.input_shape = X.shape[1:3]
+
         self.mean = None
         self.std = None
         self.tf = None
-        if self.input_shape is None: self.input_shape = X.shape[1:3]
 
         # set generator operations based on initializations
-        self.__set_actions(verbose=self.verbose)
+        self.__set_actions()
 
-    def __set_actions(self, verbose=False):
-        """Set generator processing"""
-        if self.dataset_mean:
+    def __set_actions(self):
+        """Set generator processing stream"""
+
+        # compute mean & std of dataset
+        if self.dataset_zmuv:
             self.mean = self.X.astype(np.float32).mean(self.dataset_axis)
+            self.std = (self.X.astype(np.float32) -
+                        self.mean).std(self.dataset_axis)
 
-        if self.dataset_std:
-            mean = self.mean if self.mean is not None else 0
-            self.std = (self.X.astype(np.float32) - mean).std(self.dataset_axis)
-
+        # pre-build static augmentation transform
         if self.aug_params is not None:
             self.warp_kwargs = self.aug_params.pop('warp_kwargs', None)
             self.tf = dtf.build_augmentation_transform(self.input_shape,
@@ -63,17 +91,15 @@ class BatchGenerator(object):
             self.output_shape = self.aug_params.pop('output_shape', None)
 
     def __standardize(self, x):
+        """Applies generator processor to 1 img/data"""
         # do dataset zmuv
-        if self.mean is not None:
+        if (self.mean is not None) and (self.std is not None):
             x = x - self.mean
-        if self.std is not None:
             x = x / (self.std + 1e-12)
 
         # do sample zmuv
-        if self.sample_mean:
+        if self.sample_zmuv:
             x = x - np.mean(x, axis=self.sample_axis)
-
-        if self.sample_std:
             x = x / (np.std(x, axis=self.sample_axis) + 1e-12)
 
         # apply static augmentations
@@ -87,8 +113,195 @@ class BatchGenerator(object):
 
         return x
 
-    def get_batch(self, batch_size=32, shuffle=True, buffer_size=2,
-                  rng_seed=None, dtype=np.float32, chw_order=True):
+    def get_batch(self, buffer_size=2, dtype=np.float32, chw_order=False):
+        """
+        """
+        bsize = self.batch_size
+
+        # set up generator with buffer
+        def gen_batch():
+            # generate batches
+            nb_batch = int(np.ceil(float(self.X.shape[0])/bsize))
+            for b in range(nb_batch):
+                # determine batch size. all should equal bsize except the
+                # last batch, when len(X) % bsize != 0.
+                batch_end = (b+1)*bsize
+                if batch_end > self.X.shape[0]:
+                    nb_samples = self.X.shape[0] - b*bsize
+                else:
+                    nb_samples = bsize
+
+                # get a minibatch
+                bX = []
+                for i in xrange(nb_samples):
+                    x = np.array(self.X[(b*bsize)+i], dtype=np.float32)
+
+                    # apply actions: zmuv, static_aug, rng_aug, etc.
+                    x = self.__standardize(x)
+                    bX.append(x)
+                bX = np.array(bX, dtype=dtype)
+
+                # do batch zmuv
+                if self.batch_zmuv:
+                    bX = bX - bX.mean(axis=self.batch_axis)
+                    bX = bX / (bX.std(axis=self.batch_axis) + 1e-12)
+
+                if chw_order:
+                    bX = bX.transpose(0, 3, 1, 2)
+
+                if self.y is not None:
+                    yield bX, self.y[b*bsize:b*bsize+nb_samples]
+                else:
+                    yield bX
+
+        return dtb.buffered_gen_threaded(gen_batch(), buffer_size=buffer_size)
+
+
+def img_loader(data_path):
+    """ Generic function for loading images. Supports .npy & basic PIL.Image
+    compatible extensions.
+
+    Parameters
+    ---------
+    data_path: str
+        Path to the image.
+
+    Returns
+    ---------
+    img:
+    """
+    # get format of data, using the extension
+    import os
+    ext = os.path.basename(data_path).split(os.path.extsep)[1]
+
+    if not os.path.exists(data_path):
+        raise IOError("No such file: %s" % data_path)
+
+    # load using numpy
+    if ext == '.npy':
+        img = np.load(data_path)
+
+    # else default to PIL.Image supported extensions.
+    # Loads most basic image formats.
+    else:
+        try:
+            img = np.array(Image.open(data_path))
+        except IOError:
+            raise IOError("img_loader does not recognize file ext: %s"
+                          % ext)
+    return img
+
+
+class DataGenerator(object):
+    """
+    """
+    def __init__(self, X, y=None, data_loader=img_loader, dl_kwargs=None,
+                 input_shape=None, aug_params=None, rng_aug_params=None,
+                 dataset_zmuv=False, dataset_axis=None,
+                 batch_zmuv=False, batch_axis=None,
+                 sample_zmuv=False, sample_axis=None):
+
+        # set initial states
+        self.__dict__.update(locals())
+
+        # make sure input dataset is ndarray for convenience
+        self.X = np.array(X)
+        if y is not None: self.y = np.array(y)
+
+        # additional initial default states, some override init kwargs
+        self.mean = None
+        self.std = None
+        self.tf = None
+        if dl_kwargs is None: self.dl_kwargs = {}
+        if input_shape is None: self.input_shape = self.__get_input_shape[:2]
+
+        # set generator operations based on initializations
+        self.__set_actions()
+
+    @property
+    def __get_input_shape(self):
+        """Get input shape of image using first datapath of dataset"""
+        return np.shape(self.data_loader(self.X[0], **self.dl_kwargs))
+
+    def __set_actions(self):
+        """Set generator processing stream"""
+
+        # compute mean & std of dataset
+        if self.dataset_zmuv:
+            self.mean, self.std = self.__compute_dataset_moments(self.X)
+
+        # pre-build static augmentation transform
+        if self.aug_params is not None:
+            self.warp_kwargs = self.aug_params.pop('warp_kwargs', None)
+            self.tf = dtf.build_augmentation_transform(self.input_shape,
+                                                       **self.aug_params)
+            self.output_shape = self.aug_params.pop('output_shape', None)
+
+    def __compute_dataset_moments(self, X):
+        """Computes mean and std of entire dataset"""
+        # store states so we can use get_batch w/o addn actions
+        tf = self.tf
+        rng_aug_params = self.rng_aug_params
+        batch_zmuv = self.batch_zmuv
+        sample_zmuv = self.sample_zmuv
+
+        self.tf = None
+        self.rng_aug_params = None
+        self.batch_zmuv = False
+        self.sample_zmuv = False
+
+        # compute mean/std in batches
+        batches_mean = []
+        batches_std = []
+
+        for ret in self.get_batch(batch_size=32):
+            if self.y is None:
+                mb_x = ret
+            else:
+                mb_x = ret[0]
+
+            mean = mb_x.mean(axis=self.dataset_axis)
+            std = (mb_x - mean).std(axis=self.dataset_axis)
+
+            batches_mean.append(mean)
+            batches_std.append(std)
+
+        mean = np.mean(batches_mean, axis=0)
+        std = np.mean(batches_std, axis=0)
+
+        # reset state
+        self.tf = tf
+        self.rng_aug_params = rng_aug_params
+        self.batch_zmuv = batch_zmuv
+        self.sample_zmuv = sample_zmuv
+
+        return (np.mean(batches_mean, axis=0), np.mean(batches_std, axis=0))
+
+    def __standardize(self, x):
+        """Applies generator processor to 1 img/data"""
+        # do dataset zmuv
+        if (self.mean is not None) and (self.std is not None):
+            x = x - self.mean
+            x = x / (self.std + 1e-12)
+
+        # do sample zmuv
+        if self.sample_zmuv:
+            x = x - np.mean(x, axis=self.sample_axis)
+            x = x / (np.std(x, axis=self.sample_axis) + 1e-12)
+
+        # apply static augmentations
+        if self.tf is not None:
+            x = dtf.transform_image(x, output_shape=self.output_shape,
+                                    tf=self.tf, warp_kwargs=self.warp_kwargs)
+
+        # apply random augmentations
+        if self.rng_aug_params is not None:
+            x = dtf.perturb_image(x, **self.rng_aug_params)
+
+        return x
+
+    def get_batch(self, batch_size=32, shuffle=False, buffer_size=2,
+                  rng_seed=None, dtype=np.float32, chw_order=False):
         """
         """
         if rng_seed is None:
@@ -117,16 +330,19 @@ class BatchGenerator(object):
                 batch_slice = idxs[b*batch_size:b*batch_size+nb_samples]
                 bX = []
                 for i in xrange(nb_samples):
-                    x = np.array(self.X[batch_slice[i]], dtype=np.float32)
+                    # load based on data_path & set data_looader + kwargs
+                    data_path = self.X[batch_slice[i]]
+                    x = np.array(self.data_loader(data_path, **self.dl_kwargs),
+                                 dtype=np.float32)
+
                     # apply actions: zmuv, static_aug, rng_aug, etc.
                     x = self.__standardize(x)
                     bX.append(x)
                 bX = np.array(bX, dtype=dtype)
 
                 # do batch zmuv
-                if self.batch_mean:
+                if self.batch_zmuv:
                     bX = bX - bX.mean(axis=self.batch_axis)
-                if self.batch_std:
                     bX = bX / (bX.std(axis=self.batch_axis) + 1e-12)
 
                 if chw_order:
@@ -140,366 +356,19 @@ class BatchGenerator(object):
         return dtb.buffered_gen_threaded(gen_batch(), buffer_size=buffer_size)
 
 
-def default_data_loader(data_path):
-    """ Generic function for loading images. Supports .npy & basic PIL.Image
-    compatible extensions.
-
-    Parameters
-    ---------
-    data_path: str
-        Path to the image.
-
-    Returns
-    ---------
-    img:
-    """
-    # get format of data, using the extension
+if __name__ == "__main__":
     import os
-    ext = os.path.basename(data_path).split(os.path.extsep)[1]
-
-    # load using numpy
-    if ext == '.npy':
-        img = np.load(data_path)
-
-    # else default to PIL.Image supported extensions.
-    # Loads most basic image formats.
-    else:
-        try:
-            img = np.array(Image.open(data_path))
-        except IOError:
-            raise IOError("default_data_loader does not recognize file ext: %s"
-                          % ext)
-    return img
-
-
-class DataGenerator(object):
-    """
-    Iterable batch fetcher with realtime data augmentation.
-    Loads the data and applies zero-mean unit variance and augmentations
-    on-the-fly. Below, `mb` refers to minibatch.
-
-    Parameters
-    ---------
-    data_loader: function, optional
-        Python function to load up the individual images of the dataset.
-        The function should have a call data_loader(dataPath), where
-        dataPath is the path to the image and data_loader returns the
-        image as a ndarray. See `default_data_loader` as an example.
-
-    data_loader_kwargs: dict, optional
-        Keyword arguments associated with the data_loader function.
-
-    do_global_zm: bool, optional
-        Subtract mb by mean over the dataset. See `set_global_zmuv`
-
-    do_global_uv: bool, optional
-        Divide mb by std over the dataset. See `set_global_zmuv`
-
-    do_samplewise_zm: bool, optional
-        Subtract each sample of the mb by its mean. See `set_samplewise_zmuv`
-
-    do_samplewise_uv: bool, optional
-        Divide mb each sample of the mb by its std. See `set_samplewise_zmuv`
-
-    do_static_aug: bool, optional
-        Realtime augment of each mb with stationary augmentations: [crop, zoom,
-        rotation, shear, translation (x,y), flip_lr]. See `set_aug_params`.
-
-    do_rng_aug: bool, optional
-        Realtime augment of each mb with random augmentation [crop, zoom,
-        rotation, shear, translation (x,y), flip_lr]. See `set_rng_params`.
-
-    Call
-    ---------
-    After initializing the BatchGenerator class, set each do_* procedure with
-    the associated set_* procedures. Then call by creating the generator:
-    get_batch( ... ) and calling get_batch.next().
-    """
-    def __init__(self,
-                 data_loader            = default_data_loader,
-                 data_loader_kwargs     = {},
-                 do_global_zm           = False,
-                 do_global_uv           = False,
-                 do_samplewise_zm       = False,
-                 do_samplewise_uv       = False,
-                 do_static_aug          = False,
-                 do_rng_aug             = False,
-                 ):
-
-        self.__dict__.update(locals())
-        self.mean                   = None
-        self.std                    = None
-        self.samplewise_zm_axis     = None
-        self.samplewise_uv_axis     = None
-        self.aug_tf                 = None
-        self.rng_aug_params         = None
-
-    def set_data_loader(self, data_loader, data_loader_kwargs={}):
-        """ Sets the function used to load images within the minibatches. The
-        function should be of form data_loader(dataPath). See `default_data_loader`"""
-        self.data_loader = data_loader
-        self.data_loader_kwargs = data_loader_kwargs
-
-    def set_global_zmuv(self, mean, std):
-        """ Sets global mean and std to apply to every minibatch generation. Use
-        compute_and_set_zmuv to compute and set the zero-mean and zero-std
-
-        Parameters
-        ---------
-        mean: float
-            Mean to substract on each minibatch iteration.
-
-        std; float
-            Std to divide on each minibatch iteration.
-        """
-        self._set_global_zm(mean)
-        self._set_global_uv(std)
-
-    def compute_and_set_global_zmuv(self, dataPaths, batch_size=32, axis=None,
-                                    without_augs=True, get_batch_kwargs={}):
-        """
-        Computes global mean and variance of dataset provided in dataPaths.
-        Use set_zmuv if mean and std values are already known.
-
-        Parameters
-        ---------
-        dataPaths: str, semi-optional
-            List of paths pointing to the images within the dataset.
-            Compute mean and std of minibatches and averages to obtain
-            the zero-mean and unit variance mean and std to apply on get_batch.
-
-        batch_size: int, optional
-            Size of minibatches to load to compute avg of mean and std.
-
-        axis: tuple, int, optional
-            Axis to compute over. E.g: axis=0 will compute mean across batch
-            with output shape (height, width, channels). (0,1,2) will compute
-            mean across channels with output shape (3,).
-
-        without_augs: bool, optional
-            Whether to compute the mean and std via batches with augmentation
-            or without. Without_augs=True will load batches without augmentations.
-
-        get_batch_kwargs: dict, optional
-            Additional keywords to pass to get_batch when loading the minibatches.
-            See `DataGenerator.get_batch` for kwargs.
-        """
-        # compute mean and std without augmentation
-        if without_augs:
-            do_static_aug = self.do_static_aug
-            do_rng_aug = self.do_rng_aug
-            self.do_static_aug = False
-            self.do_rng_aug = False
-
-        # compute and set mean & std
-        batches_mean = []
-        batches_std = []
-
-        # set do global zmuv to false so we can iterate thru batches
-        self.do_global_uv = False
-        self.do_global_zm = False
-        for X in self.get_batch(dataPaths, batch_size=batch_size,
-                                shuffle=False, **get_batch_kwargs):
-            mean = X.mean(axis=axis)
-            X = X - mean
-            std = X.std(axis=axis)
-
-            batches_mean.append(mean)
-            batches_std.append(std)
-
-        self.set_global_zmuv(np.mean(batches_mean, axis=0), np.mean(batches_std, axis=0))
-
-        # reset augmentation parameters
-        if without_augs:
-            self.do_static_aug = do_static_aug
-            self.do_rng_aug = do_rng_aug
-
-    def set_samplewise_zmuv(self, axis=None):
-        """
-        Sets the axis over which to take the mean and std over each sample
-        of the mb to substract and divide. All samples will have zero-mean
-        and unit-variance. See `set_global_umuv` for axis options.
-        """
-        self._set_samplewise_zm(axis=axis)
-        self._set_samplewise_uv(axis=axis)
-
-    def set_static_aug_params(self, input_shape, aug_params, warp_kwargs={}):
-        """ Sets static augmentation parameters to apply to each minibatch.
-        input_shape is shape of an image. See datumio.transforms.transform_image."""
-        if self.rng_aug_params is not None and self.do_rng_aug:
-            print("[datagen:DataGenerator] Warning: Static and Random augmentations are both set.")
-
-        self.do_static_aug = True
-        self.aug_tf = dtf.build_augmentation_transform(input_shape, **aug_params)
-        self.output_shape = aug_params.pop('output_shape', None)
-        self.static_warp_kwargs = warp_kwargs
-
-    def set_rng_aug_params(self, rng_aug_params):
-        """ Sets random augmentation parameters to apply to each minibatch.
-        input_shape is shape of an image. See datumio.transforms.perturb_image."""
-        if self.aug_tf is not None and self.do_static_aug:
-            print("[datagen:DataGenerator] Warning: Static and Random augmentations are both set.")
-
-        self.do_rng_aug = True
-        self.rng_aug_params = rng_aug_params
-
-    def get_batch(self, dataPaths, labels=None, batch_size=32, shuffle=True, buffer_size=2,
-                  rng=np.random, ret_opts={'dtype': np.float32, 'chw_order': False}):
-        """
-        Iterable batch generator. Returns minibatches of the dataset (X, labels)
-        with realtime augmentations, where X is loaded from dataPaths and
-        DataGenerator.data_loader. Use get_batch.next() to fetch batches.
-
-        Augmentation parameters and zmuv need to be set prior to running
-        get_batch.
-
-        Parameters
-        ---------
-        dataPaths: list of str
-            Path to images to load in minibatches.
-
-        labels: ndarray, shape = (data, ) or (data, one-hot-encoded), optional
-            Corresponding labels to dataset. If label is None, get_batch will
-            only return minibatches of X.
-
-        batch_size: int, optional
-            Sizes of minibatches to extract from X. If X % batch_size != 0,
-            then the last batch returned the remainder, X % batch_size.
-
-        shuffle: bool, optional
-            Whether to shuffle X and labels before generating minibatches
-
-        buffer_size: int, optional
-            Number of batches to generate in buffer such that subsequent calls
-            return a preprocessed batch from the buffer and begin generating more.
-
-        rng: np.random.RandomState, optional
-            Randomstate to shuffle X (if true) for reproducibility.
-
-        ret_opts: dict, optional
-            Return options. 'dtype': is the datatype to return per minibatch,
-            'chw_order': If true, will return the array in
-            (bsize, channels, height, width), else returns in
-            (bsize, height, width, channels).
-        """
-        # parse ret_opts
-        ret_opts = ret_opts.copy() # to not modify original object
-        ret_dtype = ret_opts.pop('dtype', np.float32)
-        ret_chw_order = ret_opts.pop('chw_order', False)
-
-        # check if do_ procedures and params are correct
-        self._check_do_params()
-
-        # shuffle data & labels
-        if shuffle:
-            idxs = range(len(dataPaths))
-            rng.shuffle(idxs)
-            dataPaths = dataPaths[idxs]
-            if labels is not None: labels = labels[idxs]
-
-        # generate batches
-        def batch_gen():
-            ndata = len(dataPaths)
-            nb_batch = int(np.ceil(float(ndata)/batch_size))
-            for b in range(nb_batch):
-                # determine batch size. all should eq batch_size except the last
-                # batch of dataset, in cases where len(dataPaths) % batch_size != 0.
-                batch_end = (b+1)*batch_size
-                if batch_end > ndata:
-                    nb_samples = ndata - b*batch_size
-                else:
-                    nb_samples = batch_size
-
-                # get a minibatch
-                bX = []
-                for i in xrange(nb_samples):
-                    # load data
-                    x = np.array(self.data_loader(dataPaths[b*batch_size+i],
-                                                  **self.data_loader_kwargs),
-                                                  dtype=np.float32)
-
-                    # apply zero-mean and unit-variance, if set
-                    x = self._standardize(x)
-
-                    # apply augmentations
-                    if self.do_static_aug:
-                        x = dtf.transform_image(x, output_shape=self.output_shape,
-                                                tf=self.aug_tf,
-                                                warp_kwargs=self.static_warp_kwargs)
-
-                    if self.do_rng_aug:
-                        x = dtf.perturb_image(x, **self.rng_aug_params)
-
-                    bX.append(x)
-
-                # clean up minibatch array for return
-                bX = np.array(bX, dtype=ret_dtype)
-                if ret_chw_order:
-                    bX = bX.transpose(0, 3, 1, 2)
-
-                if labels is not None:
-                    yield bX, labels[b*batch_size:b*batch_size+nb_samples]
-                else:
-                    yield bX
-
-        return dtb.buffered_gen_threaded(batch_gen(), buffer_size=buffer_size)
-
-    def _set_global_zm(self, mean):
-        """ Sets zero-mean to apply to each minibatch. See `set_zmuv` """
-        if self.mean is not None:
-            print("[datagen:DataGenerator] Warning: Mean was previosuly set. Replacing values...")
-        self.do_global_zm = True
-        self.mean = mean
-
-    def _set_global_uv(self, std):
-        """ Sets unit-variance to apply to each minibatch. See `set_zmuv` """
-        if self.std is not None:
-            print("[datagen:DataGenerator] Warning: Std was previously set. Replacing values...")
-        self.do_global_uv = True
-        self.std = std
-
-    def _set_samplewise_zm(self, axis=None):
-        """ Sets each sample to have zero-mean """
-        self.do_samplewise_zm = True
-        self.samplewise_zm_axis = axis
-
-    def _set_samplewise_uv(self, axis=None):
-        """ Sets each sample to have unit-variance """
-        self.do_samplewise_uv = True
-        self.samplewise_uv_axis = axis
-
-    def _standardize(self, x):
-        if self.do_global_zm:
-            x -= self.mean
-
-        if self.do_global_uv:
-            x /= (self.std + 1e-12)
-
-        if self.do_samplewise_zm:
-            x -= np.mean(x, axis=self.samplewise_zm_axis)
-
-        if self.do_samplewise_uv:
-            x /= (np.std(x, axis=self.samplewise_uv_axis) + 1e-12)
-
-        return x
-
-    def _check_do_params(self):
-        if self.do_global_zm:
-            if self.mean is None:
-                raise Exception("do_global_zm is set but mean is None\n"
-                                "... Use `set_global_zmuv` to set mean")
-
-        if self.do_global_uv:
-            if self.std is None:
-                raise Exception("do_global_uv is set but std is None\n"
-                                "... Use `set_global_zmuv` to set std")
-
-        if self.do_static_aug:
-            if self.aug_tf is None:
-                raise Exception("do_static_aug is set but aug_tf is None\n"
-                                "... use `set_static_aug_params` to set aug params")
-
-        if self.do_rng_aug:
-            if self.rng_aug_params is None:
-                raise Exception("do_rng_aug is set but rng_aug_params is None"
-                                "\n... use `set_rng_aug_params` to set rng params")
+    import pandas as pd
+
+    # set up data & truth
+    data_dir = '../tests/test_data/cifar-10/'
+    label_path = '../tests/test_data/cifar-10/labels.csv'
+    label_df = pd.read_csv(label_path)
+    uids = label_df['uid'].values
+    y = label_df['label'].values
+
+    data_paths = []
+    for x in uids:
+        data_paths.append(os.path.join(data_dir, x))
+
+    datagen = DataGenerator(data_paths, y=y, dataset_zmuv=True)
