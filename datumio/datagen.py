@@ -30,7 +30,7 @@ class BatchGenerator(object):
                  dataset_axis=0, batch_mean=False, batch_std=False,
                  batch_axis=0, sample_mean=False, sample_std=False,
                  sample_axis=0, input_shape=None, aug_params=None,
-                 rng_aug_params=None, verbose=False):
+                 rng_aug_params=None):
 
         self.__dict__.update(locals())
 
@@ -51,42 +51,25 @@ class BatchGenerator(object):
         """Set generator processing"""
         if self.dataset_mean:
             self.mean = self.X.astype(np.float32).mean(self.dataset_axis)
-            if verbose: print("... Doing dataset zero-mean")
 
         if self.dataset_std:
             mean = self.mean if self.mean is not None else 0
             self.std = (self.X.astype(np.float32) - mean).std(self.dataset_axis)
-            if verbose: print("... Doing dataset unit-variance")
-
-        if self.sample_mean:
-            if verbose: print("... Doing sample zero-mean")
-
-        if self.sample_std:
-            if verbose: print("... Doing sample unit-variance")
 
         if self.aug_params is not None:
             self.warp_kwargs = self.aug_params.pop('warp_kwargs', None)
             self.tf = dtf.build_augmentation_transform(self.input_shape,
                                                        **self.aug_params)
             self.output_shape = self.aug_params.pop('output_shape', None)
-            if verbose: print("... Doing static augmentations")
-
-        if self.rng_aug_params is not None:
-            if verbose: print("... Doing random augmentations")
-
-        if self.batch_mean:
-            if verbose: print("... Doing batch zero-mean")
-
-        if self.batch_std:
-            if verbose: print("... Doing batch unit-variance")
 
     def __standardize(self, x):
+        # do dataset zmuv
         if self.mean is not None:
             x = x - self.mean
-
         if self.std is not None:
             x = x / (self.std + 1e-12)
 
+        # do sample zmuv
         if self.sample_mean:
             x = x - np.mean(x, axis=self.sample_axis)
 
@@ -117,6 +100,7 @@ class BatchGenerator(object):
         idxs = range(len(self.X))
         if shuffle: rng.shuffle(idxs)
 
+        # set up generator with buffer
         def gen_batch():
             # generate batches
             nb_batch = int(np.ceil(float(self.X.shape[0])/batch_size))
@@ -129,20 +113,17 @@ class BatchGenerator(object):
                 else:
                     nb_samples = batch_size
 
-                batch_slice = idxs[b*batch_size:b*batch_size+nb_samples]
                 # get a minibatch
+                batch_slice = idxs[b*batch_size:b*batch_size+nb_samples]
                 bX = []
                 for i in xrange(nb_samples):
                     x = np.array(self.X[batch_slice[i]], dtype=np.float32)
-
                     # apply actions: zmuv, static_aug, rng_aug, etc.
                     x = self.__standardize(x)
-
                     bX.append(x)
-
                 bX = np.array(bX, dtype=dtype)
 
-                # do batch_mean/batch_std
+                # do batch zmuv
                 if self.batch_mean:
                     bX = bX - bX.mean(axis=self.batch_axis)
                 if self.batch_std:
@@ -159,23 +140,37 @@ class BatchGenerator(object):
         return dtb.buffered_gen_threaded(gen_batch(), buffer_size=buffer_size)
 
 
-def default_data_loader(dataPath):
+def default_data_loader(data_path):
     """ Generic function for loading images. Supports .npy & basic PIL.Image
-    compatible extensions. dataPath(str) is the path to the image. """
+    compatible extensions.
+
+    Parameters
+    ---------
+    data_path: str
+        Path to the image.
+
+    Returns
+    ---------
+    img:
+    """
     # get format of data, using the extension
     import os
-    ext = os.path.basename(dataPath).split(os.path.extsep)[1]
+    ext = os.path.basename(data_path).split(os.path.extsep)[1]
 
     # load using numpy
     if ext == '.npy':
-        dat = np.load(dataPath)
-    # else default to PIL.Image supported extensions. Loads most basic image formats.
+        img = np.load(data_path)
+
+    # else default to PIL.Image supported extensions.
+    # Loads most basic image formats.
     else:
         try:
-            dat = np.array(Image.open(dataPath))
+            img = np.array(Image.open(data_path))
         except IOError:
-            raise IOError("default_data_loader does not recognize file type: %s"%ext)
-    return dat
+            raise IOError("default_data_loader does not recognize file ext: %s"
+                          % ext)
+    return img
+
 
 class DataGenerator(object):
     """
