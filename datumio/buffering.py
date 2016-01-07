@@ -7,11 +7,23 @@ the `n` generator calls into memory on one call.
 Copied and modified from Kaggle National Data Science Bowl's 1st place winners.
 Original in: https://github.com/benanne/kaggle-ndsb/blob/master/buffering.py
 
+COPYRIGHT
+---------
+All contributions by Sander Dielman:
+Copyright (c) 2015 Sander Dieleman
+All rights reserved.
+
+All contributions by Long Van Ho:
+Copyright (c) 2015 Long Van Ho
+All rights reserved.
+
+All other contributions:
+Copyright (c) 2015, the respective contributors.
+All rights reserved.
+
 LICENSE
 ---------
 The MIT License (MIT)
-
-Copyright (c) 2015 Sander Dieleman
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

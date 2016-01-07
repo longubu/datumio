@@ -1,5 +1,5 @@
 """
-Test datumio.datagen.BatchGenerator
+Test core generator functions
 """
 import datumio.datagen as dtd
 import matplotlib.pyplot as plt
@@ -229,8 +229,14 @@ def main(gen, X, y, X_og, BATCH_SIZE=32, axis=0, show_aug_test=True):
 
 if __name__ == '__main__':
     # set up data & truth
-    data_dir = 'test_data/cifar-10/'
+    data_dir = 'test_data/chifar-10/'
     label_path = 'test_data/cifar-10/labels.csv'
+
+    if not os.path.exists(data_dir):
+        raise TestGenError("Please download the cifar10 data in order to run "
+                           "this test: \n%s"
+                           % 'https://www.dropbox.com/sh/70s91zzok19rc2n/AAA1amKjKc6Wj4MuzeIItldDa?dl=0')
+
     label_df = pd.read_csv(label_path)
     uids = label_df['uid'].values
     y = label_df['label'].values
