@@ -14,8 +14,8 @@ Datumio purpose:
 Recommended to use prepackaged modules provided by anaconda
 
 ## Build from source (does not include dependencies)
-	
-	git clone https://github.com/longubu/datumio
+
+	git clone https://github.com/longubu/datumio.git
 	cd datumio
 	python setup.py install
 
