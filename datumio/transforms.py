@@ -59,7 +59,6 @@ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
 AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN
-
 """
 import numpy as np
 import skimage.transform
@@ -206,55 +205,6 @@ def perturb_image(img, output_shape=None, zoom_range=(1.0, 1.0),
 
     return transform_image(img, output_shape=output_shape, tf=tf,
                            warp_kwargs=warp_kwargs)
-
-
-def transform_images(imgs, tf_image_kwargs=None):
-    """Transforms a batch of images.
-    imgs should be of shape (n_imgs, height, width, channels).
-    See `transform_image` for more information on tf_image_kwargs.
-    """
-    bsize, height, width, chan = imgs.shape
-    if tf_image_kwargs is None:
-        tf_image_kwargs = {}
-
-    warp_kwargs = tf_image_kwargs.pop('warp_kwargs', {})
-    tf = tf_image_kwargs.pop('tf', None)
-    if tf is None:
-        input_shape = (height, width)
-        tf = build_augmentation_transform(input_shape, **tf_image_kwargs)
-
-    output_shape = tf_image_kwargs.pop('output_shape', None)
-    if output_shape is None:
-        output_shape = (height, width)
-
-    t_imgs = np.zeros([bsize] + list(output_shape) + [chan], dtype=np.float32)
-    for it, img in enumerate(imgs):
-        t_imgs[it] = fast_warp(img, tf, output_shape=output_shape,
-                               **warp_kwargs)
-
-    return t_imgs
-
-
-def perturb_images(imgs, ptb_image_kwargs=None):
-    """Randomly transforms a batch of images.
-    imgs should be of shape (n_imgs, height, width, channels).
-    See `perturb_image` for more information on ptb_image_kwargs.
-    """
-    if ptb_image_kwargs is None:
-        ptb_image_kwargs = {}
-
-    output_shape = ptb_image_kwargs.pop('output_shape', None)
-    if output_shape is None:
-        output_shape = imgs.shape[1:3]
-
-    t_imgs = np.zeros([imgs.shape[0]] + list(output_shape) + [imgs.shape[3]],
-                      dtype=np.float32)
-
-    for it, img in enumerate(imgs):
-        t_imgs[it] = perturb_image(img, output_shape=output_shape,
-                                   **ptb_image_kwargs)
-
-    return t_imgs
 
 
 def fast_warp(img, tf, output_shape=None, order=1, mode='constant', cval=0):
