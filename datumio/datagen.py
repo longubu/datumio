@@ -23,17 +23,30 @@ import transforms as dtf
 import buffering as dtb
 
 
-class BatchGenerator(object):
-    """
+class InstantiateError(Exception):
+    """Raise error if base class was not peroperly instantiated by its
+    super class"""
+    def __init__(self, msg):
+        self.msg = msg
+
+    def __str__(self):
+        return repr(self.msg)
+
+
+class BaseGenerator(object):
+    """Abstract base generator class
+
+    All data generators accept certain keyword arguments:
+
     """
     def __init__(self, X, y=None,
                  batch_size=32, shuffle=False, rng_seed=None,
-                 input_shape=None, aug_params=None, rng_aug_params=None,
+                 aug_params=None, rng_aug_params=None,
                  dataset_zmuv=False, dataset_axis=None,
                  batch_zmuv=False, batch_axis=None,
                  sample_zmuv=False, sample_axis=None):
 
-        # initial default states
+        # set local properties
         self.batch_size = batch_size
         self.aug_params = aug_params
         self.rng_aug_params = rng_aug_params
@@ -62,35 +75,29 @@ class BatchGenerator(object):
         else:
             self.y = None
 
-        if input_shape is not None:
-            self.input_shape = input_shape
-        else:
-            self.input_shape = X.shape[1:3]
-
         self.mean = None
         self.std = None
         self.tf = None
 
-        # set generator operations based on initializations
-        self.__set_actions()
+    @property
+    def input_shape(self):
+        return np.shape(self.data_loader(self.X[0], **self.dl_kwargs))
 
-    def __set_actions(self):
+    def set_actions(self):
         """Set generator processing stream"""
 
         # compute mean & std of dataset
         if self.dataset_zmuv:
-            self.mean = self.X.astype(np.float32).mean(self.dataset_axis)
-            self.std = (self.X.astype(np.float32) -
-                        self.mean).std(self.dataset_axis)
+            self.mean, self.std = self.compute_dataset_moments()
 
         # pre-build static augmentation transform
         if self.aug_params is not None:
             self.warp_kwargs = self.aug_params.pop('warp_kwargs', None)
-            self.tf = dtf.build_augmentation_transform(self.input_shape,
+            self.tf = dtf.build_augmentation_transform(self.input_shape[:2],
                                                        **self.aug_params)
             self.output_shape = self.aug_params.pop('output_shape', None)
 
-    def __standardize(self, x):
+    def standardize(self, x):
         """Applies generator processor to 1 img/data"""
         # do dataset zmuv
         if (self.mean is not None) and (self.std is not None):
@@ -134,10 +141,12 @@ class BatchGenerator(object):
                 # get a minibatch
                 bX = []
                 for i in xrange(nb_samples):
-                    x = np.array(self.X[(b*bsize)+i], dtype=np.float32)
+                    x = np.array(
+                        self.data_loader(self.X[(b*bsize)+i], **self.dl_kwargs),
+                        dtype=np.float32)
 
                     # apply actions: zmuv, static_aug, rng_aug, etc.
-                    x = self.__standardize(x)
+                    x = self.standardize(x)
                     bX.append(x)
                 bX = np.array(bX, dtype=dtype)
 
@@ -155,6 +164,38 @@ class BatchGenerator(object):
                     yield bX
 
         return dtb.buffered_gen_threaded(gen_batch(), buffer_size=buffer_size)
+
+
+class BatchGenerator(BaseGenerator):
+    """ """
+    def __init__(self, X, y=None,
+                 batch_size=32, shuffle=False, rng_seed=None,
+                 aug_params=None, rng_aug_params=None,
+                 dataset_zmuv=False, dataset_axis=None,
+                 batch_zmuv=False, batch_axis=None,
+                 sample_zmuv=False, sample_axis=None):
+
+        kwargs = locals()
+        if 'self' in kwargs:
+            kwargs.pop('self')
+
+        # set data loader -- this just returns itself. provided for generality
+        self.set_data_loader()
+
+        super(BatchGenerator, self).__init__(**kwargs)
+        self.set_actions()
+
+    def compute_dataset_moments(self):
+        mean = self.X.astype(np.float32).mean(self.dataset_axis)
+        std = (self.X.astype(np.float32) - mean).std(self.dataset_axis)
+        return (mean, std)
+
+    def set_data_loader(self):
+        def data_loader(x):
+            return x
+
+        self.data_loader = data_loader
+        self.dl_kwargs = {}
 
 
 def img_loader(data_path):
@@ -187,57 +228,32 @@ def img_loader(data_path):
         try:
             img = np.array(Image.open(data_path))
         except IOError:
-            raise IOError("img_loader does not recognize file ext: %s"
-                          % ext)
+            raise IOError("img_loader does not recognize file ext: %s" % ext)
     return img
 
 
-class DataGenerator(object):
-    """
-    """
+class DataGenerator(BaseGenerator):
+    """ """
     def __init__(self, X, y=None, data_loader=img_loader, dl_kwargs=None,
-                 input_shape=None, aug_params=None, rng_aug_params=None,
+                 batch_size=32, shuffle=False, rng_seed=None,
+                 aug_params=None, rng_aug_params=None,
                  dataset_zmuv=False, dataset_axis=None,
                  batch_zmuv=False, batch_axis=None,
                  sample_zmuv=False, sample_axis=None):
 
-        # set initial states
-        self.__dict__.update(locals())
+        kwargs = locals()
+        if 'self' in kwargs:
+            kwargs.pop('self')
 
-        # make sure input dataset is ndarray for convenience
-        self.X = np.array(X)
-        if y is not None: self.y = np.array(y)
+        # set data loader
+        data_loader = kwargs.pop('data_loader')
+        dl_kwargs = kwargs.pop('dl_kwargs')
+        self.set_data_loader(data_loader, dl_kwargs)
 
-        # additional initial default states, some override init kwargs
-        self.mean = None
-        self.std = None
-        self.tf = None
-        if dl_kwargs is None: self.dl_kwargs = {}
-        if input_shape is None: self.input_shape = self.__get_input_shape[:2]
+        super(DataGenerator, self).__init__(**kwargs)
+        self.set_actions()
 
-        # set generator operations based on initializations
-        self.__set_actions()
-
-    @property
-    def __get_input_shape(self):
-        """Get input shape of image using first datapath of dataset"""
-        return np.shape(self.data_loader(self.X[0], **self.dl_kwargs))
-
-    def __set_actions(self):
-        """Set generator processing stream"""
-
-        # compute mean & std of dataset
-        if self.dataset_zmuv:
-            self.mean, self.std = self.__compute_dataset_moments(self.X)
-
-        # pre-build static augmentation transform
-        if self.aug_params is not None:
-            self.warp_kwargs = self.aug_params.pop('warp_kwargs', None)
-            self.tf = dtf.build_augmentation_transform(self.input_shape,
-                                                       **self.aug_params)
-            self.output_shape = self.aug_params.pop('output_shape', None)
-
-    def __compute_dataset_moments(self, X):
+    def compute_dataset_moments(self):
         """Computes mean and std of entire dataset"""
         # store states so we can use get_batch w/o addn actions
         tf = self.tf
@@ -254,7 +270,7 @@ class DataGenerator(object):
         batches_mean = []
         batches_std = []
 
-        for ret in self.get_batch(batch_size=32):
+        for ret in self.get_batch():
             if self.y is None:
                 mb_x = ret
             else:
@@ -277,98 +293,9 @@ class DataGenerator(object):
 
         return (np.mean(batches_mean, axis=0), np.mean(batches_std, axis=0))
 
-    def __standardize(self, x):
-        """Applies generator processor to 1 img/data"""
-        # do dataset zmuv
-        if (self.mean is not None) and (self.std is not None):
-            x = x - self.mean
-            x = x / (self.std + 1e-12)
-
-        # do sample zmuv
-        if self.sample_zmuv:
-            x = x - np.mean(x, axis=self.sample_axis)
-            x = x / (np.std(x, axis=self.sample_axis) + 1e-12)
-
-        # apply static augmentations
-        if self.tf is not None:
-            x = dtf.transform_image(x, output_shape=self.output_shape,
-                                    tf=self.tf, warp_kwargs=self.warp_kwargs)
-
-        # apply random augmentations
-        if self.rng_aug_params is not None:
-            x = dtf.perturb_image(x, **self.rng_aug_params)
-
-        return x
-
-    def get_batch(self, batch_size=32, shuffle=False, buffer_size=2,
-                  rng_seed=None, dtype=np.float32, chw_order=False):
-        """
-        """
-        if rng_seed is None:
-            rng = np.random
+    def set_data_loader(self, data_loader, dl_kwargs):
+        self.data_loader = data_loader
+        if dl_kwargs is None:
+            self.dl_kwargs = {}
         else:
-            rng = np.random.RandomState(seed=rng_seed)
-
-        # index to iterate through X, y
-        idxs = range(len(self.X))
-        if shuffle: rng.shuffle(idxs)
-
-        # set up generator with buffer
-        def gen_batch():
-            # generate batches
-            nb_batch = int(np.ceil(float(self.X.shape[0])/batch_size))
-            for b in range(nb_batch):
-                # determine batch size. all should equal batch_size except the
-                # last batch, when len(X) % batch_size != 0.
-                batch_end = (b+1)*batch_size
-                if batch_end > self.X.shape[0]:
-                    nb_samples = self.X.shape[0] - b*batch_size
-                else:
-                    nb_samples = batch_size
-
-                # get a minibatch
-                batch_slice = idxs[b*batch_size:b*batch_size+nb_samples]
-                bX = []
-                for i in xrange(nb_samples):
-                    # load based on data_path & set data_looader + kwargs
-                    data_path = self.X[batch_slice[i]]
-                    x = np.array(self.data_loader(data_path, **self.dl_kwargs),
-                                 dtype=np.float32)
-
-                    # apply actions: zmuv, static_aug, rng_aug, etc.
-                    x = self.__standardize(x)
-                    bX.append(x)
-                bX = np.array(bX, dtype=dtype)
-
-                # do batch zmuv
-                if self.batch_zmuv:
-                    bX = bX - bX.mean(axis=self.batch_axis)
-                    bX = bX / (bX.std(axis=self.batch_axis) + 1e-12)
-
-                if chw_order:
-                    bX = bX.transpose(0, 3, 1, 2)
-
-                if self.y is not None:
-                    yield bX, self.y[batch_slice]
-                else:
-                    yield bX
-
-        return dtb.buffered_gen_threaded(gen_batch(), buffer_size=buffer_size)
-
-
-if __name__ == "__main__":
-    import os
-    import pandas as pd
-
-    # set up data & truth
-    data_dir = '../tests/test_data/cifar-10/'
-    label_path = '../tests/test_data/cifar-10/labels.csv'
-    label_df = pd.read_csv(label_path)
-    uids = label_df['uid'].values
-    y = label_df['label'].values
-
-    data_paths = []
-    for x in uids:
-        data_paths.append(os.path.join(data_dir, x))
-
-    datagen = DataGenerator(data_paths, y=y, dataset_zmuv=True)
+            self.dl_kwargs = dl_kwargs
