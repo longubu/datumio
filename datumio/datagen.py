@@ -34,10 +34,9 @@ class InstantiateError(Exception):
 
 
 class BaseGenerator(object):
-    """Abstract base generator class
+    """Abstract base generator class.
 
-    All data generators accept certain keyword arguments:
-
+    See `BatchGenerator` for parameter descriptions.
     """
     def __init__(self, X, y=None,
                  batch_size=32, shuffle=False, rng_seed=None,
@@ -75,17 +74,24 @@ class BaseGenerator(object):
         else:
             self.y = None
 
+        # addn' default used to imply processing actions: see `set_actions`
         self.mean = None
         self.std = None
         self.tf = None
 
     @property
     def input_shape(self):
+        """Get shape of input data based on first data in X"""
         return np.shape(self.data_loader(self.X[0], **self.dl_kwargs))
 
     def set_actions(self):
-        """Set generator processing stream"""
+        """Set generator processing stream actions: dataset_zmuv, static aug
 
+        All other actions are implied from initialization:
+            - batch_zmuv
+            - sample_zmuv
+            - rng_aug_params
+        """
         # compute mean & std of dataset
         if self.dataset_zmuv:
             self.mean, self.std = self.compute_dataset_moments()
@@ -98,7 +104,14 @@ class BaseGenerator(object):
             self.output_shape = self.aug_params.pop('output_shape', None)
 
     def standardize(self, x):
-        """Applies generator processor to 1 img/data"""
+        """Applies generator processing to a loaded data x:
+            - dataset zmuv
+            - sample zmuv
+            - static augmentation
+            - rng augmentation
+
+        Batch augmentations are done after loading a batch
+        """
         # do dataset zmuv
         if (self.mean is not None) and (self.std is not None):
             x = x - self.mean
@@ -121,7 +134,32 @@ class BaseGenerator(object):
         return x
 
     def get_batch(self, buffer_size=2, dtype=np.float32, chw_order=False):
-        """
+        """Buffered generator. Returns minibatches of dataset (X, y) w/
+        real-time augmentations applied on-the-fly. If y is not provided,
+        get_batch will only return minibatches of X.
+
+        Parameters
+        ---------
+        buffer_size: int, default=2
+            Size of to load in the buffer with each call.
+
+        dtype: np.dtype, default=np.dtype32
+            Data type of minibatch to be returned.
+
+        chw_order: bool, default=False
+            Return shape of minibatch. If False, minibatch returns will be of
+            shape (batch_size, height, width, channel). If True, minibatches
+            will be return of shape (batch_size, channel, height, width)
+
+        Yield
+        ---------
+        ret: tuple OR ndarray
+            If y is None (supplied at initialization of generator), returns
+            minibatch of X with shape depending on `chw_order`.
+
+            If y is initialized, returns tuple (mb_x, mb_y), where mb_x
+            is minibatch of X and mb_y is minibatch of y wit shape
+            depending on `chw_order`.
         """
         bsize = self.batch_size
 
@@ -165,9 +203,99 @@ class BaseGenerator(object):
 
         return dtb.buffered_gen_threaded(gen_batch(), buffer_size=buffer_size)
 
+    # --- functions that need to be defined in parent class --- #
+    def compute_dataset_moments(self):
+        """Computes mean, std of dataset.
+
+        Returns
+        ------
+        (mean, std): tuple
+            Of floats or ndarrays (if computation is done on axis != None)
+        """
+        raise InstantiateError("compute_dataset_moments not instantiated")
+
+    def set_data_loader(self):
+        """Sets data_loader for generator. For BatchGenerator, returns itself.
+        For DataGenerator, user defines a function that loads in their data.
+
+        Function should set the following properties
+        ------
+        self.data_loader: func
+            Python function that loads objects of X to return data.
+
+        self.dl_kwargs: dict
+            Keyword arguments to `self.data_loader`. If no kwargs are required,
+            set dl_kwargs = {}
+
+        Returns
+        ------
+        None
+        """
+        raise InstantiateError("set_data_loader not instantiated")
+
 
 class BatchGenerator(BaseGenerator):
-    """ """
+    """Batch generator with realtime data augmentation.
+    Requires loading the dataset onto memory beforehand.
+
+    Parameters
+    ------
+    X: iterable, ndarray
+        Dataset to generate batch from.
+        X.shape must be (dataset_length, height, width, channels)
+
+    y: iterable, ndarray, default=None
+        Corresponding labels to dataset. If label is None, get_batch will
+        only return minibatches of X. y.shape = (data, ) or
+        (data, one-hot-encoded)
+
+    batch_size: int, default=32
+        Size of minibatches to extract from X. If X % batch_size != 0, then the
+        last batch returned the remainder, X % batch_size.
+
+    shuffle: bool, default=False
+        Whether to shuffle X and y before generating minibatches.
+
+    buffer_size: int, default=2
+        Size of to load in the buffer with each call.
+
+    rng_seed: int, default=None
+        Seed to random state that shuffles X,y (if `shuffle=true`).
+
+    dataset_zmuv: bool, default=False
+        Subtracts mean and divides by std of entire dataset on each sample x.
+
+    dataset_axis: None or int or tuple of ints, optional
+        Axis or axes along which dataset mean,std are computed. See `np.mean`
+        axis option. If dataset_zmuv=False, this does not matter.
+
+    batch_zmuv: bool, default=False
+        Subtracts mean and divides by std within each minibatch load on each
+        sample x.
+
+    batch_axis: None or int or tuple of ints, optional
+        Axis or axes along which batch mean,std are computed. See `np.mean`
+        axis option. If batch_zmuv=False, this does not matter.
+
+    sample_zmuv: bool, default=False
+        Subtracts mean and divides by std of x on itself.
+
+    sample_axis: None or int or tuple of ints, optional
+        Axis or axes along which sample_mean,std are computed. See `np.mean`
+        axis option. If sample_zmuv=False, this does not matter.
+
+    Examples
+    ------
+    X # array of loaded images of shape (100, 32, 32, 3)
+
+    BatchGen = BatchGenerator(X, shuffle=True, dataset_zmuv=True)
+    for mb_x in BatchGen.get_batch():
+        # do something with mb_x, a minibatch load from X with on-the-fly
+        # augmentations/zmuv
+        pass
+
+    See `examples/cifar10_cnn_batchgen.py` for more thorough example.
+    """
     def __init__(self, X, y=None,
                  batch_size=32, shuffle=False, rng_seed=None,
                  aug_params=None, rng_aug_params=None,
@@ -186,11 +314,14 @@ class BatchGenerator(BaseGenerator):
         self.set_actions()
 
     def compute_dataset_moments(self):
+        """Compute mean and std of entire dataset"""
         mean = self.X.astype(np.float32).mean(self.dataset_axis)
         std = (self.X.astype(np.float32) - mean).std(self.dataset_axis)
         return (mean, std)
 
     def set_data_loader(self):
+        """Set data_loader for generator. This is handled for generality.
+        For BatchGenerator, this returns itself"""
         def data_loader(x):
             return x
 
@@ -209,7 +340,8 @@ def img_loader(data_path):
 
     Returns
     ---------
-    img:
+    img: ndarray
+        Loaded image
     """
     # get format of data, using the extension
     import os
@@ -233,7 +365,77 @@ def img_loader(data_path):
 
 
 class DataGenerator(BaseGenerator):
-    """ """
+    """Batch generator with realtime data augmentation. Data is loaded
+    and augmented on-the-fly.
+
+    Parameters
+    ------
+    X: iterable, ndarray
+        Path to each data file within a dataset. Each sample of X is loaded
+        using `data_loader`.
+        X.shape must be (dataset_length, )
+
+    y: iterable, ndarray, default=None
+        Corresponding labels to dataset. If label is None, get_batch will
+        only return minibatches of X. y.shape = (data, ) or
+        (data, one-hot-encoded)
+
+    data_loader: func, default=img_loader
+        Function used for loading each sample of `X`. Default loader,
+        `img_loader` is a generic function that loads standard image files
+        (png, jpg, tifs, etc) and npy arrays (in the shape of an image)
+
+    dl_kwargs: dict, default=None
+        Keyword arguments to pass to `data_loader` when loading samples of X.
+        If None, no kwargs will passed to data_loader.
+
+    batch_size: int, default=32
+        Size of minibatches to extract from X. If X % batch_size != 0, then the
+        last batch returned the remainder, X % batch_size.
+
+    shuffle: bool, default=False
+        Whether to shuffle X and y before generating minibatches.
+
+    buffer_size: int, default=2
+        Size of to load in the buffer with each call.
+
+    rng_seed: int, default=None
+        Seed to random state that shuffles X,y (if `shuffle=true`).
+
+    dataset_zmuv: bool, default=False
+        Subtracts mean and divides by std of entire dataset on each sample x.
+
+    dataset_axis: None or int or tuple of ints, optional
+        Axis or axes along which dataset mean,std are computed. See `np.mean`
+        axis option. If dataset_zmuv=False, this does not matter.
+
+    batch_zmuv: bool, default=False
+        Subtracts mean and divides by std within each minibatch load on each
+        sample x.
+
+    batch_axis: None or int or tuple of ints, optional
+        Axis or axes along which batch mean,std are computed. See `np.mean`
+        axis option. If batch_zmuv=False, this does not matter.
+
+    sample_zmuv: bool, default=False
+        Subtracts mean and divides by std of x on itself.
+
+    sample_axis: None or int or tuple of ints, optional
+        Axis or axes along which sample_mean,std are computed. See `np.mean`
+        axis option. If sample_zmuv=False, this does not matter.
+
+    Examples
+    ------
+    X # path images of shape (100,)
+
+    DataGen = DataGenerator(X, shuffle=True, dataset_zmuv=True)
+    for mb_x in DataGen.get_batch():
+        # do something with mb_x, a minibatch load from X with on-the-fly
+        # augmentations/zmuv
+        pass
+
+    See `examples/cifar10_cnn_datagen.py` for more thorough example.
+    """
     def __init__(self, X, y=None, data_loader=img_loader, dl_kwargs=None,
                  batch_size=32, shuffle=False, rng_seed=None,
                  aug_params=None, rng_aug_params=None,
@@ -254,7 +456,10 @@ class DataGenerator(BaseGenerator):
         self.set_actions()
 
     def compute_dataset_moments(self):
-        """Computes mean and std of entire dataset"""
+        """Compute mean and std of entire dataset by taking the average
+        of the mean and std of loaded minibatches. Each minibatch (whose
+        size is equal to initialized batch_size) is loaded using
+        get_batch, with augmentations and zmuv computations turned off"""
         # store states so we can use get_batch w/o addn actions
         tf = self.tf
         rng_aug_params = self.rng_aug_params
@@ -269,7 +474,6 @@ class DataGenerator(BaseGenerator):
         # compute mean/std in batches
         batches_mean = []
         batches_std = []
-
         for ret in self.get_batch():
             if self.y is None:
                 mb_x = ret
@@ -294,6 +498,8 @@ class DataGenerator(BaseGenerator):
         return (np.mean(batches_mean, axis=0), np.mean(batches_std, axis=0))
 
     def set_data_loader(self, data_loader, dl_kwargs):
+        """Set data_loader for generator to load each sample of X into
+        data that can be augmented"""
         self.data_loader = data_loader
         if dl_kwargs is None:
             self.dl_kwargs = {}
