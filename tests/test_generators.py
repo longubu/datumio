@@ -75,15 +75,16 @@ def main(gen, X, y, X_og, BATCH_SIZE=32, axis=0, show_aug_test=True):
         if not np.all(mb_y == y[idx*BATCH_SIZE: (idx+1)*BATCH_SIZE]):
             raise TestGenError("Not all batch in y match correctly from data")
 
-    # test batch shuffling. Assuming the above ^ test runs successfully,
-    # we can simply do a != to see if it did any shuffling. Not a sure test.
-    Batcher = gen(X, y=y, batch_size=BATCH_SIZE, shuffle=True)
+    # test batch shuffling
+    idxs = range(len(X))
+    np.random.RandomState(16).shuffle(idxs)
+    Batcher = gen(X, y=y, batch_size=BATCH_SIZE, shuffle=True, rng_seed=16)
     batchgen = Batcher.get_batch(chw_order=False, dtype=np.uint8)
 
     for idx, (mb_x, mb_y) in enumerate(batchgen):
-        if np.all(mb_x == X_og[idx*BATCH_SIZE: (idx+1)*BATCH_SIZE]):
+        if not np.all(mb_x == X_og[idxs][idx*BATCH_SIZE: (idx+1)*BATCH_SIZE]):
             raise TestGenError("Batches in X are not correctly shuffled")
-        if np.all(mb_y == y[idx*BATCH_SIZE: (idx+1)*BATCH_SIZE]):
+        if not np.all(mb_y == y[idxs][idx*BATCH_SIZE: (idx+1)*BATCH_SIZE]):
             raise TestGenError("Batches in y are not correctly shuffled")
 
     # test if not providing labels gives us only the batch
