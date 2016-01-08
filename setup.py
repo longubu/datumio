@@ -1,13 +1,3 @@
-"""
-Setup datumio. 
-
-TODO: 
-    - fill in install requirements
-    - fill in download url
-    - fill in extras requirements
-
-"""
-
 from setuptools import setup
 from setuptools import find_packages
 
@@ -19,8 +9,8 @@ setup(name='datumio',
       author_email='longvho916@gmail.com',
       url='https://github.com/longubu/datumio',
       download_url='---',
-      license='---',
-      install_requires=['skimage', 'numpy', 'PIL'],
+      license='MIT',
+      install_requires=['scikit-image', 'numpy', 'PIL'],
       extras_require={
           '': [''],
       },

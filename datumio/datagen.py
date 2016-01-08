@@ -204,6 +204,7 @@ class BaseGenerator(object):
         return dtb.buffered_gen_threaded(gen_batch(), buffer_size=buffer_size)
 
     # --- functions that need to be defined in parent class --- #
+
     def compute_dataset_moments(self):
         """Computes mean, std of dataset.
 
