@@ -27,6 +27,11 @@ from keras.optimizers import SGD, Adadelta, Adagrad
 from keras.utils import np_utils, generic_utils
 from six.moves import range
 
+import numpy as np
+import os
+from PIL import Image
+import shutil
+
 batch_size = 32
 nb_classes = 10
 nb_epoch = 20
@@ -42,6 +47,21 @@ img_channels = 3
 print('X_train shape:', X_train.shape)
 print(X_train.shape[0], 'train samples')
 print(X_test.shape[0], 'test samples')
+
+# datumio: datagen loads data from disk. Save X_train/X_test to disk
+if not os.path.exists('cifar-10-train'): os.mkdir('cifar-10-train')
+X_train_paths = []
+for i, x in enumerate(X_train):
+    path = os.path.abspath(os.path.join('cifar-10-train', '%06d.png' % (i+1)))
+    X_train_paths.append(path)
+    Image.fromarray(x.transpose(1, 2, 0)).save(path)
+
+if not os.path.exists('cifar-10-test'): os.mkdir('cifar-10-test')
+X_test_paths = []
+for i, x in enumerate(X_test):
+    path = os.path.abspath(os.path.join('cifar-10-test', '%06d.png' % (i+1)))
+    X_test_paths.append(path)
+    Image.fromarray(x.transpose(1, 2, 0)).save(path)
 
 # convert class vectors to binary class matrices
 Y_train = np_utils.to_categorical(y_train, nb_classes)
@@ -93,23 +113,24 @@ else:
                       'translation_range': (-4, 4),
                       'do_flip_lr': True}
 
-    # revert dataset to have standard shape first
-    X_train = X_train.transpose(0, 2, 3, 1)
-    X_test = X_test.transpose(0, 2, 3, 1)
+    # DataGenerator takes X = path-to-data-files instead of actually loaded X.
+    X_train = np.array(X_train_paths)
+    X_test = np.array(X_test_paths)
 
-    datagen = dtd.BatchGenerator(X_train, y=Y_train, batch_size=batch_size,
-                                 shuffle=True, rng_aug_params=rng_aug_params,
-                                 dataset_zmuv=True, dataset_axis=0)
+    datagen = dtd.DataGenerator(X_train, y=Y_train, batch_size=batch_size,
+                                shuffle=True, rng_aug_params=rng_aug_params,
+                                dataset_zmuv=True, dataset_axis=0)
 
-    testgen = dtd.BatchGenerator(X_test, y=Y_test, batch_size=batch_size,
-                                 shuffle=True, rng_aug_params=None,
-                                 dataset_zmuv=True, dataset_axis=0)
+    testgen = dtd.DataGenerator(X_test, y=Y_test, batch_size=batch_size,
+                                shuffle=True, rng_aug_params=None,
+                                dataset_zmuv=True, dataset_axis=0)
 
     # make sure mean, std subtracted from test batches are same as ones from
     # train batches.
     testgen.mean = datagen.mean
     testgen.std = datagen.std
 
+    errors = []
     for e in range(nb_epoch):
         print('-'*40)
         print('Epoch', e)
@@ -129,3 +150,11 @@ else:
             score = model.test_on_batch(X_batch, Y_batch)
             progbar.add(X_batch.shape[0], values=[('test loss', score[0])])
             scores.append(score)
+
+        errors.append(np.mean(scores))
+
+    print(errors)
+
+# datumio: clean up folders
+shutil.rmtree('./cifar-10-train')
+shutil.rmtree('./cifar-10-test')
