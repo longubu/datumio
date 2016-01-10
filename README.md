@@ -11,7 +11,13 @@ Datumio purpose:
 
 # Installation
 ## Dependencies
-Recommended to use prepackaged modules provided by anaconda
+
+- SciPy
+- Numpy
+- PIL
+
+If you don't already have these packages installed, it is
+recommended to install via third party distribution such as anaconda. If you're using linux, it's recommended to install using the package manager -- else it may do a lengthy build process with many depedencies and may lead to a much slower configuration. 
 
 ## Build from source (does not include dependencies)
 

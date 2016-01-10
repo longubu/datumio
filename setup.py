@@ -1,5 +1,6 @@
 from setuptools import setup
 from setuptools import find_packages
+from setuptools.command.build_ext import build_ext as _build_ext
 
 
 setup(name='datumio',
@@ -10,7 +11,6 @@ setup(name='datumio',
       url='https://github.com/longubu/datumio',
       download_url='---',
       license='MIT',
-      install_requires=['scikit-image', 'numpy', 'PIL'],
       extras_require={
           '': [''],
       },
