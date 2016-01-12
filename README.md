@@ -15,6 +15,7 @@ Datumio purpose:
 - SciPy
 - Numpy
 - PIL
+- scikit-image
 
 If you don't already have these packages installed, it is
 recommended to install via third party distribution such as anaconda. If you're using linux, it's recommended to install using the package manager -- else it may do a lengthy build process with many depedencies and may lead to a much slower configuration. 
