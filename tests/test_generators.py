@@ -66,8 +66,9 @@ def main(gen, X, y, X_og, BATCH_SIZE=32, axis=0, show_aug_test=True):
     # ----- test basic io -----#
 
     # test if minibatches equal to the minibatches we extract manually
-    Batcher = gen(X, y=y, batch_size=BATCH_SIZE, shuffle=False)
-    batchgen = Batcher.get_batch(chw_order=False, dtype=np.uint8)
+    Batcher = gen(X, y=y)
+    batchgen = Batcher.get_batch(batch_size=BATCH_SIZE, shuffle=False,
+                                 chw_order=False, dtype=np.uint8)
 
     for idx, (mb_x, mb_y) in enumerate(batchgen):
         if not np.all(mb_x == X_og[idx*BATCH_SIZE: (idx+1)*BATCH_SIZE]):
@@ -78,8 +79,9 @@ def main(gen, X, y, X_og, BATCH_SIZE=32, axis=0, show_aug_test=True):
     # test batch shuffling
     idxs = range(len(X))
     np.random.RandomState(16).shuffle(idxs)
-    Batcher = gen(X, y=y, batch_size=BATCH_SIZE, shuffle=True, rng_seed=16)
-    batchgen = Batcher.get_batch(chw_order=False, dtype=np.uint8)
+    Batcher = gen(X, y=y)
+    batchgen = Batcher.get_batch(batch_size=BATCH_SIZE, shuffle=True,
+                                 rng_seed=16, chw_order=False, dtype=np.uint8)
 
     for idx, (mb_x, mb_y) in enumerate(batchgen):
         if not np.all(mb_x == X_og[idxs][idx*BATCH_SIZE: (idx+1)*BATCH_SIZE]):
@@ -88,8 +90,9 @@ def main(gen, X, y, X_og, BATCH_SIZE=32, axis=0, show_aug_test=True):
             raise TestGenError("Batches in y are not correctly shuffled")
 
     # test if not providing labels gives us only the batch
-    Batcher = gen(X, batch_size=BATCH_SIZE, shuffle=False)
-    mb_x = batchgen = Batcher.get_batch(chw_order=False, dtype=np.uint8).next()
+    Batcher = gen(X)
+    mb_x = batchgen = Batcher.get_batch(batch_size=BATCH_SIZE, shuffle=False,
+                                        chw_order=False, dtype=np.uint8).next()
     if type(mb_x) == tuple:
         raise TestGenError("Getting batch is returning y when it shouldn't")
     else:
@@ -113,13 +116,12 @@ def main(gen, X, y, X_og, BATCH_SIZE=32, axis=0, show_aug_test=True):
     # compute dataset-zmuv using Generator
     if gen.__name__ == 'DataGenerator':  # to compute same mean as manual
         Batcher = gen(X, y=y, dataset_zmuv=True, dataset_axis=axis,
-                      batch_size=500, shuffle=False)
-        Batcher.batch_size = BATCH_SIZE
+                      dataset_zmuv_bsize=500)
     else:
-        Batcher = gen(X, y=y, dataset_zmuv=True, dataset_axis=axis,
-                      batch_size=BATCH_SIZE, shuffle=False)
+        Batcher = gen(X, y=y, dataset_zmuv=True, dataset_axis=axis)
 
-    mb_x, mb_y = Batcher.get_batch(chw_order=False, dtype=np.float32).next()
+    mb_x, mb_y = Batcher.get_batch(batch_size=BATCH_SIZE, shuffle=False,
+                                   chw_order=False, dtype=np.float32).next()
 
     if not np.all(mb_x == zmuv_mb_x):
         raise TestGenError("Error correctly generating batch w/ dataset-zmuv")
@@ -130,9 +132,9 @@ def main(gen, X, y, X_og, BATCH_SIZE=32, axis=0, show_aug_test=True):
     mb_x_manual = mb_x_manual / (mb_x_manual.std(axis=axis) + 1e-12)
 
     # compute batch-zmuv using Generator
-    Batcher = gen(X, y=y, batch_zmuv=True, batch_axis=axis,
-                  batch_size=BATCH_SIZE, shuffle=False)
-    mb_x, mb_y = Batcher.get_batch(chw_order=False, dtype=np.float32).next()
+    Batcher = gen(X, y=y, batch_zmuv=True, batch_axis=axis)
+    mb_x, mb_y = Batcher.get_batch(batch_size=BATCH_SIZE, shuffle=False,
+                                   chw_order=False, dtype=np.float32).next()
 
     if not np.all(mb_x == mb_x_manual):
         raise TestGenError("Error correctly generating batch w/ batch-zmuv")
@@ -147,9 +149,9 @@ def main(gen, X, y, X_og, BATCH_SIZE=32, axis=0, show_aug_test=True):
     mb_x_manual = np.array(mb_x_manual, dtype=np.float32)
 
     # compute sample-zmuv using Generator
-    Batcher = gen(X, y=y, sample_zmuv=True, sample_axis=axis,
-                  batch_size=BATCH_SIZE, shuffle=False)
-    mb_x, mb_y = Batcher.get_batch(chw_order=False, dtype=np.float32).next()
+    Batcher = gen(X, y=y, sample_zmuv=True, sample_axis=axis)
+    mb_x, mb_y = Batcher.get_batch(batch_size=BATCH_SIZE, shuffle=False,
+                                   chw_order=False, dtype=np.float32).next()
 
     if not np.all(mb_x == mb_x_manual):
         raise TestGenError("Error correctly generating batch with sample zmuv")
@@ -167,10 +169,10 @@ def main(gen, X, y, X_og, BATCH_SIZE=32, axis=0, show_aug_test=True):
         flip_lr=True,
     )
 
-    Batcher = gen(X, y, aug_params=aug_params,
-                  batch_size=BATCH_SIZE, shuffle=False)
+    Batcher = gen(X, y, aug_params=aug_params)
 
     mb_x_aug, mb_y_aug = Batcher.get_batch(
+                            batch_size=BATCH_SIZE, shuffle=False,
                             chw_order=False, dtype=np.uint8).next()
 
     if not np.all(mb_y_og == mb_y_aug):
@@ -186,10 +188,10 @@ def main(gen, X, y, X_og, BATCH_SIZE=32, axis=0, show_aug_test=True):
         allow_stretch=False,
     )
 
-    Batcher = gen(X, y, rng_aug_params=rng_aug_params,
-                  batch_size=BATCH_SIZE, shuffle=False)
+    Batcher = gen(X, y, rng_aug_params=rng_aug_params)
 
     mb_x_rng, mb_y_rng = Batcher.get_batch(
+                            batch_size=BATCH_SIZE, shuffle=False,
                             chw_order=False, dtype=np.uint8).next()
 
     if not np.all(mb_y_og == mb_y_rng):

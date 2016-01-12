@@ -39,14 +39,12 @@ class BaseGenerator(object):
     See `BatchGenerator` for parameter descriptions.
     """
     def __init__(self, X, y=None,
-                 batch_size=32, shuffle=False, rng_seed=None,
                  aug_params=None, rng_aug_params=None,
                  dataset_zmuv=False, dataset_axis=None,
                  batch_zmuv=False, batch_axis=None,
                  sample_zmuv=False, sample_axis=None):
 
         # set local properties
-        self.batch_size = batch_size
         self.aug_params = aug_params
         self.rng_aug_params = rng_aug_params
         self.dataset_zmuv = dataset_zmuv
@@ -56,21 +54,10 @@ class BaseGenerator(object):
         self.sample_zmuv = sample_zmuv
         self.sample_axis = sample_axis
 
-        # shuffle data based on rng, if supplied
-        if rng_seed is None:
-            rng = np.random
-        else:
-            rng = np.random.RandomState(seed=rng_seed)
-
-        # index to iterate through X, y
-        idxs = range(len(X))
-        if shuffle:
-            rng.shuffle(idxs)
-
         # set input data & truth
-        self.X = np.array(X)[idxs]
+        self.X = np.array(X)
         if y is not None:
-            self.y = np.array(y)[idxs]
+            self.y = np.array(y)
         else:
             self.y = None
 
@@ -133,13 +120,24 @@ class BaseGenerator(object):
 
         return x
 
-    def get_batch(self, buffer_size=2, dtype=np.float32, chw_order=False):
+    def get_batch(self, batch_size=32, shuffle=False, rng_seed=None,
+                  buffer_size=2, dtype=np.float32, chw_order=False):
         """Buffered generator. Returns minibatches of dataset (X, y) w/
         real-time augmentations applied on-the-fly. If y is not provided,
         get_batch will only return minibatches of X.
 
         Parameters
         ---------
+        batch_size: int, default=32
+            Size of minibatches to extract from X. If X % batch_size != 0,
+            then the last batch returned the remainder, X % batch_size.
+
+        shuffle: bool, default=False
+            Whether to shuffle X and y before generating minibatches.
+
+        rng_seed: int, default=None
+            Seed to random state that shuffles X,y (if `shuffle=true`).
+
         buffer_size: int, default=2
             Size of to load in the buffer with each call.
 
@@ -161,26 +159,38 @@ class BaseGenerator(object):
             is minibatch of X and mb_y is minibatch of y wit shape
             depending on `chw_order`.
         """
-        bsize = self.batch_size
+        ndata = len(self.X)
+
+        # set randomstate for shuffling data, if supplied
+        if rng_seed is None:
+            rng = np.random
+        else:
+            rng = np.random.RandomState(seed=rng_seed)
+
+        # index to iterate through X, y
+        idxs = range(ndata)
+        if shuffle:
+            rng.shuffle(idxs)
 
         # set up generator with buffer
         def gen_batch():
             # generate batches
-            nb_batch = int(np.ceil(float(self.X.shape[0])/bsize))
+            nb_batch = int(np.ceil(float(ndata)/batch_size))
             for b in range(nb_batch):
                 # determine batch size. all should equal bsize except the
                 # last batch, when len(X) % bsize != 0.
-                batch_end = (b+1)*bsize
-                if batch_end > self.X.shape[0]:
-                    nb_samples = self.X.shape[0] - b*bsize
+                batch_end = (b + 1) * batch_size
+                if batch_end > ndata:
+                    nb_samples = ndata - b * batch_size
                 else:
-                    nb_samples = bsize
+                    nb_samples = batch_size
 
                 # get a minibatch
                 bX = []
                 for i in xrange(nb_samples):
+                    idx = idxs[(b * batch_size) + i]
                     x = np.array(
-                        self.data_loader(self.X[(b*bsize)+i], **self.dl_kwargs),
+                        self.data_loader(self.X[idx], **self.dl_kwargs),
                         dtype=np.float32)
 
                     # apply actions: zmuv, static_aug, rng_aug, etc.
@@ -197,7 +207,8 @@ class BaseGenerator(object):
                     bX = bX.transpose(0, 3, 1, 2)
 
                 if self.y is not None:
-                    yield bX, self.y[b*bsize:b*bsize+nb_samples]
+                    bslice = idxs[b * batch_size: b * batch_size + nb_samples]
+                    yield bX, self.y[bslice]
                 else:
                     yield bX
 
@@ -250,19 +261,6 @@ class BatchGenerator(BaseGenerator):
         only return minibatches of X. y.shape = (data, ) or
         (data, one-hot-encoded)
 
-    batch_size: int, default=32
-        Size of minibatches to extract from X. If X % batch_size != 0, then the
-        last batch returned the remainder, X % batch_size.
-
-    shuffle: bool, default=False
-        Whether to shuffle X and y before generating minibatches.
-
-    buffer_size: int, default=2
-        Size of to load in the buffer with each call.
-
-    rng_seed: int, default=None
-        Seed to random state that shuffles X,y (if `shuffle=true`).
-
     dataset_zmuv: bool, default=False
         Subtracts mean and divides by std of entire dataset on each sample x.
 
@@ -298,7 +296,6 @@ class BatchGenerator(BaseGenerator):
     See `examples/cifar10_cnn_batchgen.py` for more thorough example.
     """
     def __init__(self, X, y=None,
-                 batch_size=32, shuffle=False, rng_seed=None,
                  aug_params=None, rng_aug_params=None,
                  dataset_zmuv=False, dataset_axis=None,
                  batch_zmuv=False, batch_axis=None,
@@ -390,25 +387,16 @@ class DataGenerator(BaseGenerator):
         Keyword arguments to pass to `data_loader` when loading samples of X.
         If None, no kwargs will passed to data_loader.
 
-    batch_size: int, default=32
-        Size of minibatches to extract from X. If X % batch_size != 0, then the
-        last batch returned the remainder, X % batch_size.
-
-    shuffle: bool, default=False
-        Whether to shuffle X and y before generating minibatches.
-
-    buffer_size: int, default=2
-        Size of to load in the buffer with each call.
-
-    rng_seed: int, default=None
-        Seed to random state that shuffles X,y (if `shuffle=true`).
-
     dataset_zmuv: bool, default=False
         Subtracts mean and divides by std of entire dataset on each sample x.
 
     dataset_axis: None or int or tuple of ints, optional
         Axis or axes along which dataset mean,std are computed. See `np.mean`
         axis option. If dataset_zmuv=False, this does not matter.
+
+    dataset_zmuv_bsize: int, default=32
+        If dataset_zmuv == True, this is the size of minibatches to load per
+        yield to compute the dataset mean and std for zero-mean unit variance.
 
     batch_zmuv: bool, default=False
         Subtracts mean and divides by std within each minibatch load on each
@@ -438,15 +426,17 @@ class DataGenerator(BaseGenerator):
     See `examples/cifar10_cnn_datagen.py` for more thorough example.
     """
     def __init__(self, X, y=None, data_loader=img_loader, dl_kwargs=None,
-                 batch_size=32, shuffle=False, rng_seed=None,
                  aug_params=None, rng_aug_params=None,
-                 dataset_zmuv=False, dataset_axis=None,
+                 dataset_zmuv=False, dataset_axis=None, dataset_zmuv_bsize=32,
                  batch_zmuv=False, batch_axis=None,
                  sample_zmuv=False, sample_axis=None):
 
         kwargs = locals()
         if 'self' in kwargs:
             kwargs.pop('self')
+
+        # init variables that aren't standard to base class
+        self.dataset_zmuv_bsize = kwargs.pop('dataset_zmuv_bsize')
 
         # set data loader
         data_loader = kwargs.pop('data_loader')
@@ -475,7 +465,7 @@ class DataGenerator(BaseGenerator):
         # compute mean/std in batches
         batches_mean = []
         batches_std = []
-        for ret in self.get_batch():
+        for ret in self.get_batch(batch_size=self.dataset_zmuv_bsize):
             if self.y is None:
                 mb_x = ret
             else:
