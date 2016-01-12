@@ -97,12 +97,11 @@ else:
     X_train = X_train.transpose(0, 2, 3, 1)
     X_test = X_test.transpose(0, 2, 3, 1)
 
-    datagen = dtd.BatchGenerator(X_train, y=Y_train, batch_size=batch_size,
-                                 shuffle=True, rng_aug_params=rng_aug_params,
+    datagen = dtd.BatchGenerator(X_train, y=Y_train,
+                                 rng_aug_params=rng_aug_params,
                                  dataset_zmuv=True, dataset_axis=0)
 
-    testgen = dtd.BatchGenerator(X_test, y=Y_test, batch_size=batch_size,
-                                 shuffle=True, rng_aug_params=None,
+    testgen = dtd.BatchGenerator(X_test, y=Y_test,
                                  dataset_zmuv=True, dataset_axis=0)
 
     # make sure mean, std subtracted from test batches are same as ones from
@@ -117,7 +116,9 @@ else:
         print('Training...')
         # batch train with realtime data augmentation
         progbar = generic_utils.Progbar(X_train.shape[0])
-        for X_batch, Y_batch in datagen.get_batch(chw_order=True):
+        for X_batch, Y_batch in datagen.get_batch(
+                                    batch_size=batch_size, shuffle=True,
+                                    chw_order=True):
             loss = model.train_on_batch(X_batch, Y_batch)
             progbar.add(X_batch.shape[0], values=[('train loss', loss[0])])
 
@@ -125,7 +126,8 @@ else:
         # test time!
         progbar = generic_utils.Progbar(X_test.shape[0])
         scores = []
-        for X_batch, Y_batch in testgen.get_batch(chw_order=True):
+        for X_batch, Y_batch in testgen.get_batch(
+                                    batch_size=batch_size, chw_order=True):
             score = model.test_on_batch(X_batch, Y_batch)
             progbar.add(X_batch.shape[0], values=[('test loss', score[0])])
             scores.append(score)

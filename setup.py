@@ -3,7 +3,7 @@ from setuptools import find_packages
 
 
 setup(name='datumio',
-      version='0.1.0',
+      version='0.1.1',
       description='Real-time augmentation of data for inputs into deep learning models.',
       author='Long Van Ho',
       author_email='longvho916@gmail.com',
