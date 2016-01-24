@@ -10,9 +10,6 @@ BatchGenerator:
 DataGenerator:
     Mini-batch generator for datasets that can't entirely fit into memory.
 
-TODO(Long): take into account greyscale images
-TODO(Long): take into account order of operations
-
 Idea taken from Keras's implementation: Keras.preprocessing.image.py
 """
 import numpy as np
