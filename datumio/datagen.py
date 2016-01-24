@@ -65,6 +65,7 @@ class BaseGenerator(object):
         self.mean = None
         self.std = None
         self.tf = None
+        self.greyscale = False
 
     @property
     def input_shape(self):
@@ -79,6 +80,8 @@ class BaseGenerator(object):
             - sample_zmuv
             - rng_aug_params
         """
+        input_shape = self.input_shape[:2]
+
         # compute mean & std of dataset
         if self.dataset_zmuv:
             self.mean, self.std = self.compute_dataset_moments()
@@ -86,9 +89,13 @@ class BaseGenerator(object):
         # pre-build static augmentation transform
         if self.aug_params is not None:
             self.warp_kwargs = self.aug_params.pop('warp_kwargs', None)
-            self.tf = dtf.build_augmentation_transform(self.input_shape[:2],
+            self.tf = dtf.build_augmentation_transform(input_shape,
                                                        **self.aug_params)
             self.output_shape = self.aug_params.pop('output_shape', None)
+
+        # if input is greyscale. used for `chw_order` in `get_batch`
+        if len(self.input_shape) == 2:
+            self.greyscale = True
 
     def standardize(self, x):
         """Applies generator processing to a loaded data x:
@@ -204,6 +211,8 @@ class BaseGenerator(object):
                     bX = bX / (bX.std(axis=self.batch_axis) + 1e-12)
 
                 if chw_order:
+                    if self.greyscale:
+                        bX = np.expand_dims(bX, 3)
                     bX = bX.transpose(0, 3, 1, 2)
 
                 if self.y is not None:
@@ -476,9 +485,6 @@ class DataGenerator(BaseGenerator):
 
             batches_mean.append(mean)
             batches_std.append(std)
-
-        mean = np.mean(batches_mean, axis=0)
-        std = np.mean(batches_std, axis=0)
 
         # reset state
         self.tf = tf
