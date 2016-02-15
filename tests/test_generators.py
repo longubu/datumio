@@ -116,7 +116,6 @@ def main(gen, X, y, X_og, BATCH_SIZE=32, axis=0, show_aug_test=True):
     if mae > 0.01 * len(sample_weights):  # off by 1 percent
         raise TestGenError("Resampled y has incorrect distribution")
 
-#    print(class_weights)
 
     # ----- test zmuv -----#
 
