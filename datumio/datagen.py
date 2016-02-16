@@ -79,16 +79,15 @@ class BaseGenerator(object):
         arr: array-like, shape = [n_samples] or [n_samples, outputs]
             Array of labels/class/group to balance.
 
-        class_weight: dict, list of dicts, "auto", or None, optional
+        class_weight: dict, list of dicts, "balanced", or None, optional
             Weights associated with `arr` in the form ``{label: weight}``,
             where the keys `label` are unique values present in arr and
             weights are the percentage of which to sample. If not given, all
             classes are set to weights of 1. For multi-output problems, a list
             of dicts can be provided in the same order as the columns of y.\n
 
-            The "auto" mode uses the values of y to automatically adjust
-            weights inversely proportional to class frequencies in the input
-            data.\n
+            The "balanced" mode uses the values of y to automatically adjust
+            weights inversely proportional to class frequencies in the data.\n
 
             For multi-output, the weights of each column of y will be
             multiplied.
