@@ -10,4 +10,4 @@ with hopes that it is simple and general enough to be used with any framework,
 from keras to caffe.
 """
 
-__version__ = '0.1.2'
+__version__ = '0.1.3'
