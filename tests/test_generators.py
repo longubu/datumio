@@ -99,11 +99,29 @@ def main(gen, X, y, X_og, BATCH_SIZE=32, axis=0, show_aug_test=True):
         if mb_x.shape[0] != BATCH_SIZE:
             raise TestGenError("W/out y, but returning incorrect len of batch")
 
+    # test data weight sampling
+    class_weights = {0: 0.25, 1: 0.0, 2: 0.0, 3: 0.15, 4: 0.10,
+                     5: 0.25, 6: 0.0, 7: 0.0, 8: 0.15, 9: 0.10}
+    Batcher = gen(X, y)
+    Batcher.resample_dataset(y, class_weights, sample_fraction=1.0)
+    resampled_y = Batcher.y
+    if np.all(np.equal(y, resampled_y)):
+        raise TestGenError("Resampled y should not equal to y")
+
+    hist = np.histogram(resampled_y, bins=np.arange(11))
+    sample_weights = hist[0] / float(np.sum(hist[0]))
+    # check the difference between observed distribution versus desired
+    # distribution. If mae > 0.01 * n_classes, something went wrong
+    mae = np.mean(np.abs(class_weights.values() - sample_weights))
+    if mae > 0.01 * len(sample_weights):  # off by 1 percent
+        raise TestGenError("Resampled y has incorrect distribution")
+
+
+    # ----- test zmuv -----#
+
     # get a batch of non-shuffled data
     mb_x_og = X_og[:BATCH_SIZE]
     mb_y_og = y[:BATCH_SIZE]
-
-    # ----- test zmuv -----#
 
     # compute dataset-zmuv manually
     tmp_X = np.array(X_og.copy(), dtype=np.float32)

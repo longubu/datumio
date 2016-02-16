@@ -18,7 +18,7 @@ from PIL import Image
 # Local imports
 import transforms as dtf
 import buffering as dtb
-
+import data_utils as dtu
 
 class InstantiateError(Exception):
     """Raise error if base class was not peroperly instantiated by its
@@ -68,6 +68,53 @@ class BaseGenerator(object):
     def input_shape(self):
         """Get shape of input data based on first data in X"""
         return np.shape(self.data_loader(self.X[0], **self.dl_kwargs))
+
+    def resample_dataset(self, arr, weights, sample_fraction=1.0,
+                         rng_seed=None):
+        """Resamples unbalanaced dataset according to labels in `arr` and
+        `weights`. This modifies self.X and self.y.
+
+        Parameters
+        -------
+        arr: array-like, shape = [n_samples] or [n_samples, outputs]
+            Array of labels/class/group to balance.
+
+        class_weight: dict, list of dicts, "balanced", or None, optional
+            Weights associated with `arr` in the form ``{label: weight}``,
+            where the keys `label` are unique values present in arr and
+            weights are the percentage of which to sample. If not given, all
+            classes are set to weights of 1. For multi-output problems, a list
+            of dicts can be provided in the same order as the columns of y.\n
+
+            The "balanced" mode uses the values of y to automatically adjust
+            weights inversely proportional to class frequencies in the data.\n
+
+            For multi-output, the weights of each column of y will be
+            multiplied.
+
+        sample_fraction: float, default=1.0
+            Fraction of len(arr) to return when resampling dataset.
+            For example, if `sample_fraction=2.0`, will return arr of
+            ``len(2*len(arr))``.
+
+        rng_seed: int, default=None
+            Seed to random state that uses np.choice to select idxs of samples.
+
+        Returns
+        -------
+        idxs: ndarray, shape = (sample_fraction * len(arr))
+            Resampled indices of arr according to weights.
+            Will apply: self.X = self.X[idxs]
+                        self.y = self.y[idxs]
+        """
+        idxs = dtu.resample_data(arr, weights, sample_fraction=sample_fraction,
+                                 rng_seed=rng_seed)
+        self.X = self.X[idxs]
+        self.y = self.y[idxs]
+        print("[datumio] resampling dataset to len(X) = %s" % len(self.X))
+        print("[datumio] ... Note: This is sampled with replacement. An "
+              "epoch no longer means a pass through the dataset.")
+        return idxs
 
     def set_actions(self):
         """Set generator processing stream actions: dataset_zmuv, static aug
@@ -333,41 +380,6 @@ class BatchGenerator(BaseGenerator):
         self.dl_kwargs = {}
 
 
-def img_loader(data_path):
-    """ Generic function for loading images. Supports .npy & basic PIL.Image
-    compatible extensions.
-
-    Parameters
-    ---------
-    data_path: str
-        Path to the image.
-
-    Returns
-    ---------
-    img: ndarray
-        Loaded image
-    """
-    # get format of data, using the extension
-    import os
-    ext = os.path.basename(data_path).split(os.path.extsep)[1]
-
-    if not os.path.exists(data_path):
-        raise IOError("No such file: %s" % data_path)
-
-    # load using numpy
-    if ext == '.npy':
-        img = np.load(data_path)
-
-    # else default to PIL.Image supported extensions.
-    # Loads most basic image formats.
-    else:
-        try:
-            img = np.array(Image.open(data_path))
-        except IOError:
-            raise IOError("img_loader does not recognize file ext: %s" % ext)
-    return img
-
-
 class DataGenerator(BaseGenerator):
     """Batch generator with realtime data augmentation. Data is loaded
     and augmented on-the-fly.
@@ -384,10 +396,10 @@ class DataGenerator(BaseGenerator):
         only return minibatches of X. y.shape = (data, ) or
         (data, one-hot-encoded)
 
-    data_loader: func, default=img_loader
+    data_loader: func, default=dtu.img_loader
         Function used for loading each sample of `X`. Default loader,
-        `img_loader` is a generic function that loads standard image files
-        (png, jpg, tifs, etc) and npy arrays (in the shape of an image)
+        `dtu.img_loader` is a generic function that loads standard img
+        files (png, jpg, tifs, etc) and npy arrays (in the shape of an image)
 
     dl_kwargs: dict, default=None
         Keyword arguments to pass to `data_loader` when loading samples of X.
@@ -431,7 +443,7 @@ class DataGenerator(BaseGenerator):
 
     See `examples/cifar10_cnn_datagen.py` for more thorough example.
     """
-    def __init__(self, X, y=None, data_loader=img_loader, dl_kwargs=None,
+    def __init__(self, X, y=None, data_loader=dtu.img_loader, dl_kwargs=None,
                  aug_params=None, rng_aug_params=None,
                  dataset_zmuv=False, dataset_axis=None, dataset_zmuv_bsize=32,
                  batch_zmuv=False, batch_axis=None,
