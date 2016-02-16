@@ -8,6 +8,7 @@ Datumio purpose:
 - fast, (random and static) augmentation of dataset upon loading
 - agnostic to deeplearning framework
 - parallel processing of GPU and CPU - data is constantly streaming via the CPU as the GPU does computation on the previous minibatch.
+- dataset re-sampling based on labels (or any externally supplied group). For example, this is useful for resampling datasets with unbalanced labels which can bias models to predicting the classes that appear more frequently.
 
 # Installation
 ## Dependencies
