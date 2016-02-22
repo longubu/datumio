@@ -29,3 +29,14 @@ recommended to install via third party distribution such as anaconda. If you're 
 
 # Usage
 See `examples/*` for usage.
+
+- [cifar10_cnn_batchgen.py](examples/cifar10_cnn_batchgen.py): Example of using the batch generator with data that can fit entirely into memory.
+- [cifar10_cnn_datagen.py](examples/cifar10_cnn_datagen.py): Example of using the batch generator with data that must be loaded as needed and can not be loaded into memory.
+- [cifar10_cnn_datagen_with_resampling.py](examples/cifar10_cnn_datagen_with_resampling): Example of using the batch generator that samples batches in proportion to given labels (E.g. to sample labels uniformly from unbalanced datasets).
+- [mnist_cnn_batchgen.py](examples/mnist_cnn_batchgen.py): Example of batch generator on mnist dataset.
+
+# TODO
+
+- Create examples for other deep learning frameworks: [caffe, tensorflow, mxnet, etc]
+- Extend to non-image data
+- Create example for using it with single-file databases (lmdb, HDF5, etc)
