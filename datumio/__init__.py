@@ -9,5 +9,9 @@ Datumio is an aggregation of other existing open source projects
 with hopes that it is simple and general enough to be used with any framework,
 from keras to caffe.
 """
+from __future__ import absolute_import
+from .transforms import *
+from .datagen import *
+
 
 __version__ = '0.1.3'
