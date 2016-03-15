@@ -46,7 +46,6 @@ Idea taken from Keras's implementation: Keras.preprocessing.image.py
 """
 
 import numpy as np
-from PIL import Image
 
 # Local imports
 import transforms as dtf
