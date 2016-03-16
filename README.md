@@ -30,10 +30,14 @@ recommended to install via third party distribution such as anaconda. If you're 
 # Usage
 See `examples/*` for usage.
 
-- [cifar10_cnn_batchgen.py](examples/cifar10_cnn_batchgen.py): Example of using the batch generator with data that can fit entirely into memory.
-- [cifar10_cnn_datagen.py](examples/cifar10_cnn_datagen.py): Example of using the batch generator with data that must be loaded as needed and can not be loaded into memory.
-- [cifar10_cnn_datagen_with_resampling.py](examples/cifar10_cnn_datagen_with_resampling): Example of using the batch generator that samples batches in proportion to given labels (E.g. to sample labels uniformly from unbalanced datasets).
-- [mnist_cnn_batchgen.py](examples/mnist_cnn_batchgen.py): Example of batch generator on mnist dataset.
+### keras
+- [cifar10_cnn_batchgen.py](examples/keras/cifar10_cnn_batchgen.py): Example of using the batch generator with data that can fit entirely into memory.
+- [cifar10_cnn_datagen.py](examples/keras/cifar10_cnn_datagen.py): Example of using the batch generator with data that must be loaded as needed and can not be loaded into memory.
+- [cifar10_cnn_datagen_with_resampling.py](examples/keras/cifar10_cnn_datagen_with_resampling.py): Example of using the batch generator that samples batches in proportion to given labels (E.g. to sample labels uniformly from unbalanced datasets).
+- [mnist_cnn_batchgen.py](examples/keras/mnist_cnn_batchgen.py): Example of batch generator on mnist dataset.
+
+### tensorflow
+- [mnist_cnn.py](examples/tensorflow/mnist_cnn.py): Example of using batch generator with MNIST to train a CNN using tensorflow
 
 # TODO
 
